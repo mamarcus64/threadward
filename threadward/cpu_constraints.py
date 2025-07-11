@@ -1,0 +1,2 @@
+class CPUConstraints:
+    pass
