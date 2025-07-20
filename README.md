@@ -13,7 +13,10 @@ From a high-level, users first initialize a `threadward` project via `threadward
 
 ## Installing `threadward`
 
-`threadward` is meant to be executed on a Linux operating system that uses NVIDIA GPUs and will likely crash in other execution environments. Additionally, `threadward` is designed to be run in a conda environment.
+`threadward` is meant to be executed on a Linux operating system that uses NVIDIA GPUs and will likely crash in other execution environments. Additionally, `threadward` is designed to be run in a conda environment. To install `threadward` to your conda environment, run:
+```bash
+pip install git+https://github.com/mamarcus64/threadward.git
+```
 
 ## Usage
 
@@ -81,20 +84,19 @@ During execution, you can interact with `threadward` in the terminal with these 
 
 ### `threadward run` Execution Loop
 
-1. Generate all tasks into `threadward/task_queue/all_tasks.json` based on `variable_iteration.py` and create a `Task` queue
-    - Call `before_all_tasks()`
-2. Create workers based on `resource_contraints.py`
-    - For each worker, call `before_each_worker(worker_id)`
-3. While the `Task` queue is not empty:
+1. Generate all tasks into `threadward/task_queue/all_tasks.json` based on `variable_iteration.py` and create a `Task` list. This JSON contains a list of dictionaries, with each entry containing a unique `Task` ID as well as the key-value pairs of each variable to both its string value and its nickname.
+2. Call `before_all_tasks()`
+3. Create workers based on `resource_contraints.py`
+4. For each worker, call `before_each_worker(worker_id)`
+5. While the `Task` queue is not empty:
     - Wait until the next free worker
     - Assign a `Task` to the freed worker that retains the most amount of hierarchical variables from the previous task
         - Call `before_each_task(variables, task_folder, log_file)`
         - The worker executes the `Task`
         - Call `after_each_task(variables, task_folder, log_file)`
         - Write to `threadward/task_queue/successful_tasks.txt` or `threadward/task_queue/failed_tasks.txt` based on completed `Task` status
-4. Teardown `threadward`
-    - For each worker, call `after_each_worker(worker_id)`
-    - Call `after_all_tasks()`
+6. For each worker, call `after_each_worker(worker_id)`
+7. Call `after_all_tasks()`
 
 ## `Task` specifications
 
@@ -131,7 +133,7 @@ In addition, the following default settings can be changed. These are listed as 
 
 `threadward` operates under the framework of **hierarchical variable retention**. When iterating over multiple variables, all variable values higher up on the hierarchy are retained when iterating over the variables underneath them. **This means that the order of the defined variables matters a lot.**
 
-For example, imagine that I were running an NLP sentiment analysis pipeline with four variables, `model`, `dataset`, `test_set`, and `seed`, in that exact order. This means that once a worker subprocess loads a speciic model, it will only receive tasks that use that model until all tasks using that model are finished -- i.e. every combination of `(dataset, test_set, seed)` defined in the `VariableSet`. Similarly, once a specific `model` loads a certain `dataset`, it will iterate over every `(test_set, seed)` combination before loading a new dataset.
+For example, imagine that I were running an NLP sentiment analysis pipeline with four variables, `model`, `dataset`, `test_set`, and `seed`, in that exact order. This means that once a worker subprocess loads a specific model, it will only receive tasks that use that model until all tasks using that model are finished -- i.e. every combination of `(dataset, test_set, seed)` defined in the `VariableSet`. Similarly, once a specific `model` loads a certain `dataset`, it will iterate over every `(test_set, seed)` combination before loading a new dataset.
 
 In the `variable_iteration.py` file, there is one main function, `setup_variable_set`, where the implementation for the example above would be:
 
@@ -204,6 +206,10 @@ There are several classes included in `threadward`, including `Worker`, `Task`, 
 2. Activate this conda environment
 3. Set active GPUs via the `CUDA_VISIBLE_DEVICES` environment variable
     - We set visible GPUs on an individual-worker level; for each worker, only `NUM_GPUS_PER_WORKER` devices should be visible
+
+### Task Scheduling
+
+Worker subprocesses and the main `threadward` script communicate via `STDIN` and `STDOUT`: as `STDIN` input, workers recieve the `Task` ID, where they can then lookup the specific variable values in `task_queue.json`. The worker itself writes the `Task` success or failure in the appropriate log `.txt` file and returns either a `0` (for success) or `1` (for failure). Receiving the `STDIN` of `SHUT_DOWN` is the signal to the worker to shut down the process.
 
 ### Monitoring GPU and CPU Usage
 
