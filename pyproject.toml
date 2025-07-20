@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "threadward"
+version = "0.1.0"
+description = "Parallel Processing for Generalizable AI Experimentation in Python"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "threadward"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "psutil>=5.9.0",
+    "GPUtil>=1.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mamarcus64/threadward"
+Repository = "https://github.com/mamarcus64/threadward.git"
+
+[project.scripts]
+threadward = "threadward.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["threadward*"]
+
+[tool.setuptools.package-data]
+threadward = ["templates/*"]

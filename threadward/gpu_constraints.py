@@ -1,2 +1,0 @@
-class GPUConstraints:
-    pass
