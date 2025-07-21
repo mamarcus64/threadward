@@ -34,9 +34,7 @@ class TestInitCommand(unittest.TestCase):
         
         # Check that required files were created
         required_files = [
-            "task_specification.py",
-            "resource_constraints.py",
-            "variable_iteration.py"
+            "task_setup.py"
         ]
         
         for filename in required_files:
@@ -63,9 +61,9 @@ class TestInitCommand(unittest.TestCase):
         init_command(self.test_dir)
         threadward_dir = os.path.join(self.test_dir, "threadward")
         
-        # Check task_specification.py contains required functions
-        task_spec_path = os.path.join(threadward_dir, "task_specification.py")
-        with open(task_spec_path, 'r') as f:
+        # Check task_setup.py contains required functions
+        task_setup_path = os.path.join(threadward_dir, "task_setup.py")
+        with open(task_setup_path, 'r') as f:
             content = f.read()
         
         required_functions = [
@@ -76,26 +74,16 @@ class TestInitCommand(unittest.TestCase):
         ]
         
         for func in required_functions:
-            self.assertIn(func, content, f"Missing function in task_specification.py: {func}")
+            self.assertIn(func, content, f"Missing function in task_setup.py: {func}")
         
         # Check for configuration constants
         self.assertIn("SUCCESS_CONDITION", content)
         self.assertIn("OUTPUT_MODE", content)
         
-        # Check variable_iteration.py contains setup function
-        var_iter_path = os.path.join(threadward_dir, "variable_iteration.py")
-        with open(var_iter_path, 'r') as f:
-            content = f.read()
-        
+        # Check task_setup.py contains variable setup and configuration
         self.assertIn("def setup_variable_set(", content)
         self.assertIn("FAILURE_HANDLING", content)
         self.assertIn("TASK_FOLDER_LOCATION", content)
-        
-        # Check resource_constraints.py contains configuration
-        constraints_path = os.path.join(threadward_dir, "resource_constraints.py")
-        with open(constraints_path, 'r') as f:
-            content = f.read()
-        
         self.assertIn("NUM_WORKERS", content)
         self.assertIn("NUM_GPUS_PER_WORKER", content)
     
@@ -116,7 +104,7 @@ class TestInitCommand(unittest.TestCase):
         
         # Check that old file is gone and new structure exists
         self.assertFalse(os.path.exists(test_file))
-        self.assertTrue(os.path.exists(os.path.join(threadward_dir, "task_specification.py")))
+        self.assertTrue(os.path.exists(os.path.join(threadward_dir, "task_setup.py")))
     
     @patch('builtins.input', return_value='n')
     def test_init_command_cancel_overwrite(self, mock_input):

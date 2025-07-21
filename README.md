@@ -1,216 +1,230 @@
 # `threadward`: Parallel Processing for Generalizable AI Experimentation in Python
-`threadward` is a lightweight package that enables you to run custom scripts while iterating over combinations of script variables. Just define the script, declare the variables you want to iterate over, set your GPU and CPU constraints, and `threadward` will do the rest -- automatically spinning up different Python subprocess workers, creating a `Task` queue and allocating jobs to workers, and retaining important variables that persist between each `Task`.
 
-From a high-level, users first initialize a `threadward` project via `threadward init`, which creates a template for the user to implement that defines a single Python `Task` and a set of variables to run this `Task` over. Then, `threadward run` starts the project, where Python subprocess workers are created via the `subprocess` library; the main `threadward` script handles assigning `Task`s to these workers and monitoring their status.
+`threadward` is a lightweight package that enables you to run custom scripts while iterating over combinations of script variables. Just define your task, declare the variables you want to iterate over, set your GPU and CPU constraints, and `threadward` will handle the rest -- automatically spinning up Python subprocess workers, creating task queues, and allocating jobs to workers.
 
 ## Table of Contents
 - [Installing `threadward`](#installing-threadward)
-- [Usage](#usage)
-- [`Task` specifications](#task-specifications)
-- [`VariableSet` specifications](#variableset-specifications)
-- [Constraint specifications](#constraint-specifications)
+- [Quick Start](#quick-start)
+- [Local Package Imports](#local-package-imports)
+- [Configuration Options](#configuration-options)
+- [Variable Specifications](#variable-specifications)
 - [Implementation Details](#implementation-details)
 
 ## Installing `threadward`
 
-`threadward` is meant to be executed on a Linux operating system that uses NVIDIA GPUs and will likely crash in other execution environments. Additionally, `threadward` is designed to be run in a conda environment. To install `threadward` to your conda environment, run:
+Install `threadward` directly from GitHub:
 ```bash
 pip install git+https://github.com/mamarcus64/threadward.git
 ```
 
-## Usage
+## Quick Start
 
-To begin using `threadward`, you must first initialize it:
+### 1. Initialize a Configuration File
+
+Create a new threadward configuration file:
 ```bash
-cd YOUR_DIRECTORY
-threadward init
-```
-This creates the folder `YOUR_DIRECTORY/threadward` with this structure:
-```
-YOUR_DIRECTORY/
-├── EXISTING_CODE
-└── threadward/
-  ├── task_specification.py
-  ├── resource_constraints.py
-  ├── variable_iteration.py
-  └── task_queue/ 
-    ├── all_tasks.json (empty until threadward run)
-    ├── successful_tasks.txt (empty until threadward run)
-    └── failed_tasks.txt (empty until threadward run)
+threadward init my_experiment
 ```
 
-Fill in the following Python files:
-- `task_specification.py`
-    - **required:** implement the main task in `task_method`
-    - **optional:** implement setup/teardown
-        - `before/after_all_tasks`
-        - `before/after_each_worker`
-        - `before/after_each_task`
-    - **optional:** implement task completion verification
-        - `verify_task_success`
-- `resource_constraints.py`
-    - **optional:** define CPU and subprocess constraints
-    - **optional:** define GPU constraints
-- `variable_iteration.py`
-    - **required:** define the sets of variables that you will iterate over
-    - **optional:** log and handle `Task` failures
-    - **optional:** save successful `Task` outputs
+This creates `tw_my_experiment.py` in your current directory.
 
-After filling out these files, simply run:
-```bash
-cd YOUR_DIRECTORY
-threadward run
-```
-During execution, you can interact with `threadward` in the terminal with these commands:
-- `show` (`s`)
-    - Displays high-level information:
-       - Time since start
-       - Average time per task (and max time)
-       - Estimated time remaining
-       - Number of tasks completed (failed and successful)
-       - Number of tasks remaining
-    - For each subprocess, displays:
-       - Worker ID (defined by `threadward`, incrementing from 0)
-       - PID (defined by the Linux OS)
-       - CPU Utilization (max and current)
-       - RAM Usage (max and current)
-       - GPU Memory Usage (max and current)
-- `quit` (`q`)
-    - Stops all new tasks **but does not interrupt any currently running tasks.** Calls all teardown methods normally.
-- `add` (`a`)
-    - Adds one more subprocess worker based on the original constraints.
-- `remove [Worker ID]` (`r [Worker ID]`)
-    -  Shuts down the specified subprocess **after the current worker's task finishes**. Calls relevant teardown methods normally.
+### 2. Edit Your Configuration
 
-### `threadward run` Execution Loop
+Open `tw_my_experiment.py` and implement your task:
 
-1. Generate all tasks into `threadward/task_queue/all_tasks.json` based on `variable_iteration.py` and create a `Task` list. This JSON contains a list of dictionaries, with each entry containing a unique `Task` ID as well as the key-value pairs of each variable to both its string value and its nickname.
-2. Call `before_all_tasks()`
-3. Create workers based on `resource_contraints.py`
-4. For each worker, call `before_each_worker(worker_id)`
-5. While the `Task` queue is not empty:
-    - Wait until the next free worker
-    - Assign a `Task` to the freed worker that retains the most amount of hierarchical variables from the previous task
-        - Call `before_each_task(variables, task_folder, log_file)`
-        - The worker executes the `Task`
-        - Call `after_each_task(variables, task_folder, log_file)`
-        - Write to `threadward/task_queue/successful_tasks.txt` or `threadward/task_queue/failed_tasks.txt` based on completed `Task` status
-6. For each worker, call `after_each_worker(worker_id)`
-7. Call `after_all_tasks()`
+```python
+import threadward
 
-## `Task` specifications
-
-The `task_specification.py` file will contain the following method headers:
-```
-task_method(variables, task_folder, log_file)
-before_all_tasks()
-after_all_tasks()
-before_each_worker(worker_id)
-after_each_worker(worker_id)
-before_each_task(variables, task_folder, log_file)
-after_each_task(variables, task_folder, log_file)
-verify_task_success(variables, task_folder, log_file)
-```
-- `variables`: a dictionary mapping from variable name to value as defined in `variable_iteration.py`.
-    - Any modification to `variables` during `before_each_task` will be retained 
-- `worker_id`: integer corresponding to `threadward` worker ID, incrementing from 0
-- `task_folder`: the corresponding folder associated with the current `Task`
-- `log_file`: location of the log file for the output generated during the `Task`.
-   - NOTE: by default, **ALL TASK OUTPUT** (including errors) will be redirected to the log file instead of being printed to the terminal.
-
-In addition, the following default settings can be changed. These are listed as constant variables in upper-case listed at the top of the `task_specification.py` file.
-- `SUCCESS_CONDITION`: how to check if a `Task` successfully finished.
-    - `NO_ERROR_AND_VERIFY` (default): The `Task` both finishes with no error and passes the `verify_task_success` method (which returns `True` by default).
-    - `NO_ERROR_ONLY`: The `Task` finishes with no error. `verify_task_sucesss` is not called after `Task` completion.
-    - `VERIFY_ONLY`: `verify_task_success` returns `True` after the `Task` is finished, regardless of if the `Task` threw an error.
-    - `ALWAYS_SUCCESS`: Success is a mindset. If you never think you will fail, you won't.
-- `OUTPUT_MODE`: how the `Task` logs output generated inside a `Task`.
-    - `LOG_FILE_ONLY` (default): All output is logged to the log file and nothing is printed to the console.
-    - `CONSOLE_ONLY`: All output is printed to the console only. This is NOT recommended for multiple workers.
-    - `LOG_FILE_AND_CONSOLE`: All output is both logged to the log file and printed to the console.
+def task_method(variables, task_folder, log_file):
+    # Your task logic here
+    print(f"Running with variables: {variables}")
     
-## `VariableSet` specifications
+def setup_variable_set(variable_set):
+    variable_set.add_variable(
+        name="learning_rate",
+        values=[0.001, 0.01, 0.1],
+        nicknames=["lr_001", "lr_01", "lr_1"]
+    )
+    variable_set.add_variable(
+        name="batch_size",
+        values=[16, 32, 64]
+    )
 
-`threadward` operates under the framework of **hierarchical variable retention**. When iterating over multiple variables, all variable values higher up on the hierarchy are retained when iterating over the variables underneath them. **This means that the order of the defined variables matters a lot.**
+if __name__ == "__main__":
+    threadward.run()
+```
 
-For example, imagine that I were running an NLP sentiment analysis pipeline with four variables, `model`, `dataset`, `test_set`, and `seed`, in that exact order. This means that once a worker subprocess loads a specific model, it will only receive tasks that use that model until all tasks using that model are finished -- i.e. every combination of `(dataset, test_set, seed)` defined in the `VariableSet`. Similarly, once a specific `model` loads a certain `dataset`, it will iterate over every `(test_set, seed)` combination before loading a new dataset.
+### 3. Run Your Experiment
 
-In the `variable_iteration.py` file, there is one main function, `setup_variable_set`, where the implementation for the example above would be:
+```bash
+python tw_my_experiment.py
+```
+
+That's it! `threadward` will create task folders, manage workers, and execute your tasks across all variable combinations.
+
+## Local Package Imports
+
+One of the key advantages of the new structure is seamless local package imports. If you have a project structure like:
+
+```
+YOUR_PROJECT/
+├── local_package/
+│   ├── __init__.py
+│   ├── models.py
+│   └── utils.py
+├── data/
+└── tw_my_experiment.py
+```
+
+You can directly import from your local packages in the configuration file:
+
+```python
+import threadward
+from local_package.models import MyModel
+from local_package.utils import process_data
+
+def task_method(variables, task_folder, log_file):
+    model = MyModel(variables['model_type'])
+    data = process_data(variables['dataset'])
+    # ... rest of your task
+
+if __name__ == "__main__":
+    threadward.run()
+```
+
+This works because:
+1. The configuration file runs from your project directory
+2. Python automatically includes the current directory in the import path
+3. All local packages are available for import without any special setup
+
+**Key Point**: If `YOUR_DIRECTORY/local_package` exists, then `import local_package.local_file` will work seamlessly in your generated configuration file.
+
+## Configuration Options
+
+Your configuration file supports the following options:
+
+### Task Control
+- `SUCCESS_CONDITION`: How to determine task success
+  - `"NO_ERROR_AND_VERIFY"` (default): No errors AND `verify_task_success` returns True
+  - `"NO_ERROR_ONLY"`: Only check for no errors
+  - `"VERIFY_ONLY"`: Only use `verify_task_success` 
+  - `"ALWAYS_SUCCESS"`: Always consider successful
+
+- `OUTPUT_MODE`: How to handle task output
+  - `"LOG_FILE_ONLY"` (default): Only log to file
+  - `"CONSOLE_ONLY"`: Only print to console
+  - `"LOG_FILE_AND_CONSOLE"`: Both file and console
+
+### Resource Management
+- `NUM_WORKERS`: Number of parallel workers (default: 1)
+- `NUM_GPUS_PER_WORKER`: GPUs per worker (default: 0)
+- `AVOID_GPUS`: List of GPU IDs to avoid (default: None)
+- `INCLUDE_GPUS`: List of GPU IDs to use exclusively (default: None)
+
+### Task Organization
+- `TASK_FOLDER_LOCATION`: How to organize task folders
+  - `"VARIABLE_SUBFOLDER"` (default): Nested folders by variable
+  - `"VARIABLE_UNDERSCORE"`: Single folder with underscore-separated names
+
+- `EXISTING_FOLDER_HANDLING`: What to do with existing task folders
+  - `"SKIP"` (default): Skip tasks with existing folders
+  - `"OVERWRITE"`: Delete existing folders and rerun
+  - `"QUIT"`: Stop execution if any folders exist
+
+- `FAILURE_HANDLING`: How to handle task failures
+  - `"PRINT_FAILURE_AND_CONTINUE"` (default): Print failure and continue
+  - `"SILENT_CONTINUE"`: Continue silently
+  - `"STOP_EXECUTION"`: Stop on first failure
+
+## Variable Specifications
+
+### Hierarchical Variables
+
+`threadward` uses **hierarchical variable retention** - variables defined first are considered "higher level" and workers retain these values while iterating through lower-level combinations.
 
 ```python
 def setup_variable_set(variable_set):
-   # ORDER MATTERS! Start by inserting the highest-level variables.
-   variable_set.add_variable(name="model", values=["gpt2", "google-bert/bert-base-uncased", "meta-llama/Llama-3.1-8B"], nicknames=["GPT2", "BERT", "Llama3.1"])
-
-   # interaction defines how the combination of variables interact with the variable above it. Default is Cartesian product
-   variable_set.add_variable(name="dataset", values=["HappyGoLucky", "FinalEmotions"], interaction="cartesian")
-
-   # Use the exceptions keyword to pass in dictionaries for specific values
-   variable_set.add_variable(name="test_set", values=["dev", "test"], exceptions={"HappyGoLucky": ["test"]})
-
-   # Use the nicknames variable to set easier names for logging and folder creation.
-   variable_set.add_variable(name="seed", values=list(range(0, 9999, 1111)), nicknames=list(range(0, 9, 1)))
+    # First variable (highest level)
+    variable_set.add_variable(
+        name="model",
+        values=["gpt2", "bert-base", "llama-7b"],
+        nicknames=["GPT2", "BERT", "Llama"]
+    )
+    
+    # Second level - will iterate for each model
+    variable_set.add_variable(
+        name="dataset", 
+        values=["dataset1", "dataset2"]
+    )
+    
+    # Lowest level - will iterate for each model/dataset combo
+    variable_set.add_variable(
+        name="seed",
+        values=[42, 123, 456]
+    )
 ```
 
-By default, task folders are created based on the variable nicknames, in the order they are defined. If a nickname is not explicitly defined, the true value will be created. For our example, each `Task` folder would be located in `{model}/{dataset}/{test_set}/{seed}`.
+With this setup, a worker will load one model and use it for all dataset/seed combinations before moving to the next model.
 
-As you might have noticed, if we want to retain the values of the `model` variable, right now that only corresponds to the string of the Hugging Face model ID. **The VariableSet class only accepts string (or string-castable) values as input. If you want to set a value of a variable, you must create and implement a method named `{variable_name}_to_value(string_value, nickname)`.** For our example, we would need to define:
+### Variable Exceptions
+
+You can specify exceptions to exclude certain combinations:
+
+```python
+variable_set.add_variable(
+    name="batch_size",
+    values=[16, 32, 64, 128],
+    exceptions={
+        "0.1": ["16", "32"]  # High learning rate only with small batches
+    }
+)
+```
+
+### Value Converters
+
+Convert string values to objects by defining converter functions:
+
 ```python
 def model_to_value(string_value, nickname):
     if nickname == 'BERT':
         return AutoModel.from_pretrained(string_value)
     else:
         return AutoModelForCausalLM.from_pretrained(string_value)
-
-def dataset_to_value(string_value, nickname):
-    # assuming we load this function from our main source code
-    return load_dataset(string_value)
 ```
-
-If this function exists, all relevant variables will be passed through this function and the return value will be what is passed to the `Task`.
-
-In addition, the following default settings can be changed. These are listed as constant variables in upper-case listed at the top of the `variable_iteration.py` file.
-- `FAILURE_HANDLING`: what to do on a failed `Task`.
-    - `PRINT_FAILURE_AND_CONTINUE` (default): prints the failed `Task` to the console and continues.
-    - `SILENT_CONTINUE`: does not print anything and continues.
-    - `STOP_EXECUTION`: stops execution after the first failed `Task` (but lets each worker finish its current `Task`).
-- `TASK_FOLDER_LOCATION`: how to determine the `Task` folder location.
-    - `VARIABLE_SUBFOLDER` (default): creates nested subfolders for each variable.
-    - `VARIABLE_UNDERSCORE`: creates one folder per task where variables are concatenated via underscore.
-
-## Constraint specifications
-
-The `resource_constraints.py` file contains several important variables that determine how many workers are created and how progress is monitored. These include:
-
-- `NUM_WORKERS`: The total number of workers (default: 1).
-- `NUM_GPUS_PER_WORKER`: The total number of workers per GPU (default: 0).
-    - This value can be less than one (i.e., 1/2), which means more than one worker will be assigned to each GPU.
-        - NOTE: Python will not "play nice" if you assign multiple workers to the same GPU -- if multiple workers on the same GPU will cause an out of memory error, this will not be flagged before execution. Be careful if you decide to do this.
-    - This value must have the `NUM_GPUS` value defined.
-- `AVOID_GPUS`: list of GPUs (defined as their GPU number; i.e., '5', not 'cuda:5') to not allocate (default: None).
-    - If there are less than `NUM_WORKERS * NUM_GPUS_PER_WORKER` GPUs available, throw an error.
-- `INCLUDE_GPUS`: list of GPUs to use from. Only GPUs from this list will be used (default: None).
-    - If `NUM_WORKERS * NUM_GPUS_PER_WORKER < INCLUDE_GPUS`, throw an error.
-    - If there are overlapping GPUs in `AVOID_GPUS` and `INCLUDE_GPUS`, throw an error.
 
 ## Implementation Details
 
-### Class Structures
+### File Structure
 
-There are several classes included in `threadward`, including `Worker`, `Task`, `VariableSet`, and `Threadward`, which is the main entry point. Most of the files created for the user template extend a `threadward` class as the user is implementing its functionality.
+After running your configuration file, `threadward` creates:
 
-### Creating Subprocesses
+```
+YOUR_PROJECT/
+├── tw_my_experiment.py          # Your configuration file
+├── task_queue/                  # Created during execution
+│   ├── all_tasks.json
+│   ├── successful_tasks.txt
+│   └── failed_tasks.txt
+├── worker_script.py             # Temporary worker script
+└── [task_folders]/              # Individual task results
+    ├── GD/lr_001/16/seed_0/
+    ├── GD/lr_001/16/seed_1/
+    └── ...
+```
 
-`threadward` uses `subprocess` over `multiprocessing` because of GPU allocations. Because we are assigning different GPUs for each worker, spinning up a subprocess worker will involve the following steps:
-1. Identify the conda environment used by the main `threadward` script
-2. Activate this conda environment
-3. Set active GPUs via the `CUDA_VISIBLE_DEVICES` environment variable
-    - We set visible GPUs on an individual-worker level; for each worker, only `NUM_GPUS_PER_WORKER` devices should be visible
+### Worker Management
+
+- Workers are Python subprocesses that communicate via stdin/stdout
+- Each worker can be assigned specific GPUs via `CUDA_VISIBLE_DEVICES`
+- Workers persist across multiple tasks to retain loaded models/data
+- Automatic cleanup and resource management
 
 ### Task Scheduling
 
-Worker subprocesses and the main `threadward` script communicate via `STDIN` and `STDOUT`: as `STDIN` input, workers recieve the `Task` ID, where they can then lookup the specific variable values in `task_queue.json`. The worker itself writes the `Task` success or failure in the appropriate log `.txt` file and returns either a `0` (for success) or `1` (for failure). Receiving the `STDIN` of `SHUT_DOWN` is the signal to the worker to shut down the process.
+1. Generate all task combinations from your variable specifications
+2. Create task queue and worker processes
+3. Assign tasks to workers based on hierarchical variable retention
+4. Monitor execution and handle failures according to your configuration
+5. Clean up resources when complete
 
-### Monitoring GPU and CPU Usage
-
-RAM, CPU Usage, and GPU Memory will be monitored using the `psutil` and `GPUtil` packages. They are included in the `pip` installation of `threadward`. When using `GPUtil`, the specific devices for each worker must be remembered. It is important to keep track of each worker's PID in order to track this information.
+The system is designed to be robust, resumable (via `EXISTING_FOLDER_HANDLING = "SKIP"`), and efficient for iterative experimentation workflows.

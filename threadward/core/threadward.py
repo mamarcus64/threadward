@@ -19,15 +19,16 @@ except ImportError:
 class Threadward:
     """Main coordinator class for threadward execution."""
     
-    def __init__(self, project_path: str = "."):
+    def __init__(self, project_path: str, config_module):
         """Initialize Threadward coordinator.
         
         Args:
-            project_path: Path to the project directory containing threadward folder
+            project_path: Path to the project directory
+            config_module: The loaded configuration module
         """
         self.project_path = os.path.abspath(project_path)
-        self.threadward_path = os.path.join(project_path, "threadward")
-        self.task_queue_path = os.path.join(self.threadward_path, "task_queue")
+        self.config_module = config_module
+        self.task_queue_path = os.path.join(project_path, "task_queue")
         
         # Task management
         self.tasks: List[Task] = []
@@ -44,7 +45,12 @@ class Threadward:
         self.is_running = False
         self.should_stop = False
         
-        # Configuration (loaded from files)
+        # Load configuration from module
+        self._load_configuration()
+    
+    def _load_configuration(self) -> None:
+        """Load configuration from config module."""
+        # Default configuration
         self.config = {
             "NUM_WORKERS": 1,
             "NUM_GPUS_PER_WORKER": 0,
@@ -53,86 +59,81 @@ class Threadward:
             "SUCCESS_CONDITION": "NO_ERROR_AND_VERIFY",
             "OUTPUT_MODE": "LOG_FILE_ONLY",
             "FAILURE_HANDLING": "PRINT_FAILURE_AND_CONTINUE",
-            "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER"
+            "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
+            "EXISTING_FOLDER_HANDLING": "SKIP"
         }
         
-        # Load configuration
-        self._load_configuration()
+        # Update with values from config module
+        for key in self.config.keys():
+            if hasattr(self.config_module, key):
+                self.config[key] = getattr(self.config_module, key)
     
-    def _load_configuration(self) -> None:
-        """Load configuration from resource_constraints.py and other files."""
-        try:
-            # Load resource constraints
-            constraints_path = os.path.join(self.threadward_path, "resource_constraints.py")
-            if os.path.exists(constraints_path):
-                with open(constraints_path, 'r') as f:
-                    constraints_code = f.read()
-                
-                # Execute the constraints code to extract variables
-                constraints_globals = {}
-                exec(constraints_code, constraints_globals)
-                
-                # Update config with defined variables
-                for key in ["NUM_WORKERS", "NUM_GPUS_PER_WORKER", "AVOID_GPUS", "INCLUDE_GPUS"]:
-                    if key in constraints_globals:
-                        self.config[key] = constraints_globals[key]
+    def _handle_existing_folders(self) -> bool:
+        """Handle existing task folders based on EXISTING_FOLDER_HANDLING setting.
+        
+        Returns:
+            True if should continue execution, False if should quit
+        """
+        existing_folder_handling = self.config["EXISTING_FOLDER_HANDLING"]
+        existing_folders = []
+        
+        # Check which task folders already exist
+        for task in self.tasks:
+            if os.path.exists(task.task_folder):
+                existing_folders.append(task.task_folder)
+        
+        if not existing_folders:
+            return True  # No existing folders, continue normally
+        
+        if existing_folder_handling == "SKIP":
+            print(f"Found {len(existing_folders)} existing task folders - skipping these tasks")
+            # Remove tasks with existing folders
+            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            print(f"Remaining tasks to execute: {len(self.tasks)}")
+            return True
             
-            # Load task specification constants
-            task_spec_path = os.path.join(self.threadward_path, "task_specification.py")
-            if os.path.exists(task_spec_path):
-                with open(task_spec_path, 'r') as f:
-                    task_spec_code = f.read()
-                
-                task_spec_globals = {}
-                exec(task_spec_code, task_spec_globals)
-                
-                for key in ["SUCCESS_CONDITION", "OUTPUT_MODE"]:
-                    if key in task_spec_globals:
-                        self.config[key] = task_spec_globals[key]
+        elif existing_folder_handling == "OVERWRITE":
+            print(f"Found {len(existing_folders)} existing task folders - will overwrite")
+            # Delete existing folders
+            import shutil
+            for folder in existing_folders:
+                try:
+                    shutil.rmtree(folder)
+                    print(f"Removed existing folder: {folder}")
+                except Exception as e:
+                    print(f"Warning: Failed to remove folder {folder}: {e}")
+            return True
             
-            # Load variable iteration constants
-            var_iter_path = os.path.join(self.threadward_path, "variable_iteration.py")
-            if os.path.exists(var_iter_path):
-                with open(var_iter_path, 'r') as f:
-                    var_iter_code = f.read()
-                
-                var_iter_globals = {}
-                exec(var_iter_code, var_iter_globals)
-                
-                for key in ["FAILURE_HANDLING", "TASK_FOLDER_LOCATION"]:
-                    if key in var_iter_globals:
-                        self.config[key] = var_iter_globals[key]
-                        
-        except Exception as e:
-            print(f"Warning: Failed to load configuration: {e}")
+        elif existing_folder_handling == "QUIT":
+            print(f"Found {len(existing_folders)} existing task folders - quitting execution")
+            print("Existing folders:")
+            for folder in existing_folders[:10]:  # Show first 10
+                print(f"  {folder}")
+            if len(existing_folders) > 10:
+                print(f"  ... and {len(existing_folders) - 10} more")
+            return False
+            
+        else:
+            print(f"Warning: Unknown EXISTING_FOLDER_HANDLING value: {existing_folder_handling}")
+            print("Using default behavior (SKIP)")
+            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            return True
     
     def generate_tasks(self) -> bool:
-        """Generate all tasks based on variable_iteration.py.
+        """Generate all tasks based on config module.
         
         Returns:
             True if tasks generated successfully, False otherwise
         """
         try:
-            # Load and execute variable_iteration.py
-            var_iter_path = os.path.join(self.threadward_path, "variable_iteration.py")
-            if not os.path.exists(var_iter_path):
-                print(f"Error: {var_iter_path} not found")
-                return False
-            
-            with open(var_iter_path, 'r') as f:
-                var_iter_code = f.read()
-            
-            # Create variable set and execute the setup function
+            # Create variable set and call setup function from config module
             variable_set = VariableSet()
-            var_iter_globals = {"variable_set": variable_set}
-            exec(var_iter_code, var_iter_globals)
             
-            # Call setup_variable_set function
-            if "setup_variable_set" not in var_iter_globals:
-                print("Error: setup_variable_set function not found in variable_iteration.py")
+            if not hasattr(self.config_module, 'setup_variable_set'):
+                print("Error: setup_variable_set function not found in configuration")
                 return False
             
-            var_iter_globals["setup_variable_set"](variable_set)
+            self.config_module.setup_variable_set(variable_set)
             
             # Generate all combinations
             combinations = variable_set.generate_combinations()
@@ -157,10 +158,28 @@ class Threadward:
                 
                 self.tasks.append(task)
             
-            # Save tasks to JSON file
+            # Create task_queue folder and files
             os.makedirs(self.task_queue_path, exist_ok=True)
-            all_tasks_path = os.path.join(self.task_queue_path, "all_tasks.json")
             
+            # Create empty task queue files
+            queue_files = {
+                "all_tasks.json": json.dumps([], indent=2),
+                "successful_tasks.txt": "",
+                "failed_tasks.txt": ""
+            }
+            
+            for filename, content in queue_files.items():
+                file_path = os.path.join(self.task_queue_path, filename)
+                if not os.path.exists(file_path):
+                    with open(file_path, 'w') as f:
+                        f.write(content)
+            
+            # Handle existing task folders based on configuration
+            if not self._handle_existing_folders():
+                return False
+            
+            # Save tasks to JSON file
+            all_tasks_path = os.path.join(self.task_queue_path, "all_tasks.json")
             with open(all_tasks_path, 'w') as f:
                 json.dump([task.to_dict() for task in self.tasks], f, indent=2)
             
@@ -254,7 +273,10 @@ class Threadward:
     
     def _create_worker_script(self) -> str:
         """Create the worker script that will be executed by subprocesses."""
-        worker_script_content = '''
+        # Get the config file path from the config module
+        config_file = getattr(self.config_module, '__file__', 'config.py')
+        
+        worker_script_content = f'''
 import sys
 import os
 import json
@@ -263,16 +285,15 @@ import importlib.util
 
 def main():
     worker_id = int(sys.argv[1])
-    threadward_path = os.path.join(os.getcwd(), "threadward")
+    config_file_path = "{config_file}"
     
-    # Load task specification module
-    task_spec_path = os.path.join(threadward_path, "task_specification.py")
-    spec = importlib.util.spec_from_file_location("task_specification", task_spec_path)
+    # Load config module
+    spec = importlib.util.spec_from_file_location("config", config_file_path)
     task_spec = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(task_spec)
     
     # Load all tasks
-    all_tasks_path = os.path.join(threadward_path, "task_queue", "all_tasks.json")
+    all_tasks_path = os.path.join(os.getcwd(), "task_queue", "all_tasks.json")
     with open(all_tasks_path, 'r') as f:
         all_tasks_data = json.load(f)
     
@@ -365,7 +386,7 @@ def execute_task(task_spec, task_data):
     except Exception as e:
         success = False
         with open(log_file, 'a') as log:
-            log.write(f"\\nError: {str(e)}\\n")
+            log.write("\\nError: " + str(e) + "\\n")
     
     finally:
         # Call after_each_task
@@ -392,7 +413,7 @@ if __name__ == "__main__":
     main()
 '''
         
-        worker_script_path = os.path.join(self.threadward_path, "worker_script.py")
+        worker_script_path = os.path.join(self.project_path, "worker_script.py")
         with open(worker_script_path, 'w') as f:
             f.write(worker_script_content)
         
@@ -447,13 +468,14 @@ if __name__ == "__main__":
                     if result is not None:
                         # Task completed
                         task = worker.current_task
-                        if result:
-                            self.completed_tasks.append(task)
-                            self._log_task_result(task, True)
-                        else:
-                            self.failed_tasks.append(task)
-                            self._log_task_result(task, False)
-                            self._handle_task_failure(task)
+                        if task is not None:
+                            if result:
+                                self.completed_tasks.append(task)
+                                self._log_task_result(task, True)
+                            else:
+                                self.failed_tasks.append(task)
+                                self._log_task_result(task, False)
+                                self._handle_task_failure(task)
                 
                 # Assign new task if worker is idle
                 if worker.status == "idle" and not self.task_queue.empty():
@@ -474,13 +496,14 @@ if __name__ == "__main__":
                     result = worker.check_task_completion()
                     if result is not None:
                         task = worker.current_task
-                        if result:
-                            self.completed_tasks.append(task)
-                            self._log_task_result(task, True)
-                        else:
-                            self.failed_tasks.append(task)
-                            self._log_task_result(task, False)
-                            self._handle_task_failure(task)
+                        if task is not None:
+                            if result:
+                                self.completed_tasks.append(task)
+                                self._log_task_result(task, True)
+                            else:
+                                self.failed_tasks.append(task)
+                                self._log_task_result(task, False)
+                                self._handle_task_failure(task)
             
             time.sleep(0.1)
     
@@ -516,17 +539,10 @@ if __name__ == "__main__":
         # SILENT_CONTINUE does nothing
     
     def _call_hook(self, hook_name: str, *args, **kwargs) -> None:
-        """Call a hook function from task_specification.py if it exists."""
+        """Call a hook function from config module if it exists."""
         try:
-            task_spec_path = os.path.join(self.threadward_path, "task_specification.py")
-            if os.path.exists(task_spec_path):
-                import importlib.util
-                spec = importlib.util.spec_from_file_location("task_specification", task_spec_path)
-                task_spec = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(task_spec)
-                
-                if hasattr(task_spec, hook_name):
-                    getattr(task_spec, hook_name)(*args, **kwargs)
+            if hasattr(self.config_module, hook_name):
+                getattr(self.config_module, hook_name)(*args, **kwargs)
         except Exception as e:
             print(f"Warning: Failed to call hook {hook_name}: {e}")
     

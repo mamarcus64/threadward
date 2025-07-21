@@ -4,7 +4,6 @@ import argparse
 import sys
 import os
 from .init_command import init_command
-from .run_command import run_command
 
 
 def main():
@@ -14,56 +13,33 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  threadward init          Initialize a new threadward project in current directory
-  threadward run           Run threadward in current directory
-  threadward run --help    Show detailed run options
+  threadward init experiment_1    Create tw_experiment_1.py configuration file
+  threadward init loop_2 --path /path/to/project    Create configuration in specific directory
         """
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     
-    # Init command
-    init_parser = subparsers.add_parser(
-        "init", 
-        help="Initialize a new threadward project"
+    # Init subcommand
+    init_parser = subparsers.add_parser("init", help="Initialize a new threadward configuration")
+    init_parser.add_argument(
+        "name",
+        help="Name for the threadward configuration (creates tw_{name}.py)"
     )
     init_parser.add_argument(
         "--path",
         default=".",
-        help="Path to initialize project (default: current directory)"
-    )
-    
-    # Run command
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Run threadward execution"
-    )
-    run_parser.add_argument(
-        "--path",
-        default=".",
-        help="Path to project directory (default: current directory)"
-    )
-    run_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Generate tasks and show statistics without executing"
+        help="Path to create configuration file (default: current directory)"
     )
     
     # Parse arguments
     args = parser.parse_args()
     
-    if args.command is None:
-        parser.print_help()
-        sys.exit(1)
-    
     try:
         if args.command == "init":
-            init_command(args.path)
-        elif args.command == "run":
-            run_command(args.path, dry_run=args.dry_run)
+            init_command(args.name, args.path)
         else:
             parser.print_help()
-            sys.exit(1)
             
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
