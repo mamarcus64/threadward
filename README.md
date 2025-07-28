@@ -47,28 +47,40 @@ This creates `threadward_run.py` in your current directory.
 
 ### 2. Edit Your Configuration
 
-Open `threadward_my_experiment.py` (or `threadward_run.py`) and implement your task:
+Open `threadward_my_experiment.py` (or `threadward_run.py`) and implement your Runner class:
 
 ```python
 import threadward
 
-def task_method(variables, task_folder, log_file):
-    # Your task logic here
-    print(f"Running with variables: {variables}")
+class My_experimentRunner(threadward.Threadward):
+    def __init__(self):
+        super().__init__()
+        self.set_constraints(
+            NUM_WORKERS=1,
+            NUM_GPUS_PER_WORKER=0
+        )
     
-def setup_variable_set(variable_set):
-    variable_set.add_variable(
-        name="learning_rate",
-        values=[0.001, 0.01, 0.1],
-        nicknames=["lr_001", "lr_01", "lr_1"]
-    )
-    variable_set.add_variable(
-        name="batch_size",
-        values=[16, 32, 64]
-    )
+    def task_method(self, variables, task_folder, log_file):
+        # Your task logic here
+        print(f"Running with variables: {variables}")
+    
+    def verify_task_success(self, variables, task_folder, log_file):
+        return True
+        
+    def setup_variable_set(self, variable_set):
+        variable_set.add_variable(
+            name="learning_rate",
+            values=[0.001, 0.01, 0.1],
+            nicknames=["lr_001", "lr_01", "lr_1"]
+        )
+        variable_set.add_variable(
+            name="batch_size",
+            values=[16, 32, 64]
+        )
 
 if __name__ == "__main__":
-    threadward.run()
+    runner = My_experimentRunner()
+    runner.run()
 ```
 
 ### 3. Run Your Experiment
@@ -105,13 +117,24 @@ import threadward
 from local_package.models import MyModel
 from local_package.utils import process_data
 
-def task_method(variables, task_folder, log_file):
-    model = MyModel(variables['model_type'])
-    data = process_data(variables['dataset'])
-    # ... rest of your task
+class Runner(threadward.Threadward):
+    def __init__(self):
+        super().__init__()
+        
+    def task_method(self, variables, task_folder, log_file):
+        model = MyModel(variables['model_type'])
+        data = process_data(variables['dataset'])
+        # ... rest of your task
+    
+    def verify_task_success(self, variables, task_folder, log_file):
+        return True
+        
+    def setup_variable_set(self, variable_set):
+        pass
 
 if __name__ == "__main__":
-    threadward.run()
+    runner = Runner()
+    runner.run()
 ```
 
 This works because:

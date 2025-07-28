@@ -9,7 +9,8 @@ GPU allocation.
 __version__ = "0.1.0"
 __author__ = "threadward"
 
-from .core.threadward import Threadward
+from .core.threadward import Threadward as ThreadwardCore
+from .core.base import Threadward
 from .core.task import Task
 from .core.worker import Worker
 from .core.variable_set import VariableSet
@@ -45,7 +46,7 @@ def run(config_file_path=None):
     spec.loader.exec_module(config)
     
     # Create and run threadward instance
-    threadward = Threadward(config_dir, config)
+    threadward = ThreadwardCore(config_dir, config)
     threadward.run()
 
 __all__ = ["Threadward", "Task", "Worker", "VariableSet", "run"]

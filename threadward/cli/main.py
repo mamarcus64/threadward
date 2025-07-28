@@ -13,9 +13,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  threadward init                 Create threadward_run.py configuration file
-  threadward init experiment_1    Create threadward_experiment_1.py configuration file
-  threadward init loop_2 --path /path/to/project    Create configuration in specific directory
+  threadward init                 Create threadward_run.py with Runner class
+  threadward init experiment_1    Create threadward_experiment_1.py with Experiment_1Runner class
+  threadward init loop_2 --path /path/to/project    Create runner in specific directory
         """
     )
     
@@ -26,7 +26,7 @@ Examples:
     init_parser.add_argument(
         "name",
         nargs="?",
-        help="Optional name for the threadward configuration (creates threadward_{name}.py, or threadward_run.py if no name)"
+        help="Optional name for the threadward runner (creates threadward_{name}.py with {name}Runner class, or threadward_run.py with Runner class if no name)"
     )
     init_parser.add_argument(
         "--path",

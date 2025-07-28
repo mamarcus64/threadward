@@ -39,48 +39,43 @@ def init_command(name: str = None, project_path: str = "."):
 
 
 def _create_config_file(config_path: str, name: str):
-    """Create minimalist threadward configuration file."""
-    content = '''import threadward
+    """Create threadward runner class configuration file."""
+    
+    # Determine class name
+    if name:
+        class_name = f"{name.capitalize()}Runner"
+    else:
+        class_name = "Runner"
+    
+    content = f'''import threadward
 
-SUCCESS_CONDITION = "NO_ERROR_AND_VERIFY"
-OUTPUT_MODE = "LOG_FILE_ONLY"
-NUM_WORKERS = 1
-NUM_GPUS_PER_WORKER = 0
-AVOID_GPUS = None
-INCLUDE_GPUS = None
-FAILURE_HANDLING = "PRINT_FAILURE_AND_CONTINUE"
-TASK_FOLDER_LOCATION = "VARIABLE_SUBFOLDER"
-EXISTING_FOLDER_HANDLING = "SKIP"
-
-def task_method(variables, task_folder, log_file):
-    pass
-
-def before_all_tasks():
-    pass
-
-def after_all_tasks():
-    pass
-
-def before_each_worker(worker_id):
-    pass
-
-def after_each_worker(worker_id):
-    pass
-
-def before_each_task(variables, task_folder, log_file):
-    pass
-
-def after_each_task(variables, task_folder, log_file):
-    pass
-
-def verify_task_success(variables, task_folder, log_file):
-    return True
-
-def setup_variable_set(variable_set):
-    pass
+class {class_name}(threadward.Threadward):
+    def __init__(self):
+        super().__init__()
+        self.set_constraints(
+            SUCCESS_CONDITION="NO_ERROR_AND_VERIFY",
+            OUTPUT_MODE="LOG_FILE_ONLY",
+            NUM_WORKERS=1,
+            NUM_GPUS_PER_WORKER=0,
+            AVOID_GPUS=None,
+            INCLUDE_GPUS=None,
+            FAILURE_HANDLING="PRINT_FAILURE_AND_CONTINUE",
+            TASK_FOLDER_LOCATION="VARIABLE_SUBFOLDER",
+            EXISTING_FOLDER_HANDLING="SKIP"
+        )
+    
+    def task_method(self, variables, task_folder, log_file):
+        pass
+    
+    def verify_task_success(self, variables, task_folder, log_file):
+        return True
+    
+    def setup_variable_set(self, variable_set):
+        pass
 
 if __name__ == "__main__":
-    threadward.run()
+    runner = {class_name}()
+    runner.run()
 '''
     
     with open(config_path, 'w') as f:
