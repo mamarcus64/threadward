@@ -36,11 +36,18 @@ Create a new threadward configuration file:
 threadward init my_experiment
 ```
 
-This creates `tw_my_experiment.py` in your current directory.
+This creates `threadward_my_experiment.py` in your current directory.
+
+Or create a default configuration file:
+```bash
+threadward init
+```
+
+This creates `threadward.py` in your current directory.
 
 ### 2. Edit Your Configuration
 
-Open `tw_my_experiment.py` and implement your task:
+Open `threadward_my_experiment.py` (or `threadward.py`) and implement your task:
 
 ```python
 import threadward
@@ -67,7 +74,12 @@ if __name__ == "__main__":
 ### 3. Run Your Experiment
 
 ```bash
-python tw_my_experiment.py
+python threadward_my_experiment.py
+```
+
+Or if you used the default name:
+```bash
+python threadward.py
 ```
 
 That's it! `threadward` will create task folders, manage workers, and execute your tasks across all variable combinations.
@@ -83,7 +95,7 @@ YOUR_PROJECT/
 │   ├── models.py
 │   └── utils.py
 ├── data/
-└── tw_my_experiment.py
+└── threadward_my_experiment.py
 ```
 
 You can directly import from your local packages in the configuration file:
@@ -210,7 +222,7 @@ After running your configuration file, `threadward` creates:
 
 ```
 YOUR_PROJECT/
-├── tw_my_experiment.py          # Your configuration file
+├── threadward_my_experiment.py  # Your configuration file
 ├── task_queue/                  # Created during execution
 │   ├── all_tasks.json
 │   ├── successful_tasks.txt

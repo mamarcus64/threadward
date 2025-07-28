@@ -58,6 +58,8 @@ class Worker:
             True if worker started successfully, False otherwise
         """
         try:
+            print(f"DEBUG: Starting worker {self.worker_id} with script: {worker_script_path}")
+            
             # Prepare environment variables
             env = os.environ.copy()
             
@@ -78,6 +80,8 @@ class Worker:
                 # Use current Python environment
                 cmd = ["python", worker_script_path, str(self.worker_id)]
             
+            print(f"DEBUG: Worker {self.worker_id} command: {cmd}")
+            
             # Start the subprocess
             self.process = subprocess.Popen(
                 cmd,
@@ -89,16 +93,28 @@ class Worker:
                 bufsize=1
             )
             
+            print(f"DEBUG: Worker {self.worker_id} subprocess started with PID: {self.process.pid}")
+            
+            # Check if process started successfully
+            if self.process.poll() is not None:
+                print(f"ERROR: Worker {self.worker_id} process terminated immediately")
+                stderr_output = self.process.stderr.read()
+                print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+                return False
+            
             self.status = "idle"
             self.start_time = time.time()
             
             # Start monitoring thread
             self._start_monitoring()
             
+            print(f"DEBUG: Worker {self.worker_id} started successfully")
             return True
             
         except Exception as e:
             print(f"Failed to start worker {self.worker_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def assign_task(self, task: Task) -> bool:
@@ -110,13 +126,28 @@ class Worker:
         Returns:
             True if task was assigned successfully, False otherwise
         """
+        print(f"DEBUG: Attempting to assign task {task.task_id} to worker {self.worker_id}")
+        print(f"DEBUG: Worker {self.worker_id} status: {self.status}, process: {self.process is not None}")
+        
         if self.status != "idle" or self.process is None:
+            print(f"DEBUG: Worker {self.worker_id} not ready - status: {self.status}, process exists: {self.process is not None}")
+            return False
+        
+        # Check if process is still alive
+        if self.process.poll() is not None:
+            print(f"ERROR: Worker {self.worker_id} process has terminated (return code: {self.process.returncode})")
+            stderr_output = self.process.stderr.read()
+            print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
             return False
         
         try:
+            print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
+            
             # Send task ID to worker via stdin
             self.process.stdin.write(f"{task.task_id}\n")
             self.process.stdin.flush()
+            
+            print(f"DEBUG: Task {task.task_id} sent successfully to worker {self.worker_id}")
             
             self.current_task = task
             self.status = "busy"
@@ -128,6 +159,9 @@ class Worker:
             
         except Exception as e:
             print(f"Failed to assign task to worker {self.worker_id}: {e}")
+            print(f"DEBUG: Process state - poll: {self.process.poll()}, stdin: {self.process.stdin}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def check_task_completion(self) -> Optional[bool]:

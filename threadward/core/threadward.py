@@ -276,6 +276,9 @@ class Threadward:
         # Get the config file path from the config module
         config_file = getattr(self.config_module, '__file__', 'config.py')
         
+        # Use repr() to properly escape the path for cross-platform compatibility
+        config_file_repr = repr(config_file)
+        
         worker_script_content = f'''
 import sys
 import os
@@ -285,7 +288,7 @@ import importlib.util
 
 def main():
     worker_id = int(sys.argv[1])
-    config_file_path = "{config_file}"
+    config_file_path = {config_file_repr}
     
     # Load config module
     spec = importlib.util.spec_from_file_location("config", config_file_path)
@@ -414,8 +417,16 @@ if __name__ == "__main__":
 '''
         
         worker_script_path = os.path.join(self.project_path, "worker_script.py")
-        with open(worker_script_path, 'w') as f:
-            f.write(worker_script_content)
+        print(f"DEBUG: Creating worker script at: {worker_script_path}")
+        print(f"DEBUG: Config file path in script: {config_file}")
+        
+        try:
+            with open(worker_script_path, 'w') as f:
+                f.write(worker_script_content)
+            print(f"DEBUG: Worker script created successfully")
+        except Exception as e:
+            print(f"ERROR: Failed to create worker script: {e}")
+            raise
         
         return worker_script_path
     

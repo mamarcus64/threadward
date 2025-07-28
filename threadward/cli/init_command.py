@@ -5,15 +5,20 @@ import shutil
 from pathlib import Path
 
 
-def init_command(name: str, project_path: str = "."):
+def init_command(name: str = None, project_path: str = "."):
     """Initialize a new threadward configuration file.
     
     Args:
-        name: Name for the threadward configuration (creates tw_{name}.py)
+        name: Optional name for the threadward configuration (creates threadward_{name}.py if provided, threadward.py otherwise)
         project_path: Path to create the file in
     """
     project_path = os.path.abspath(project_path)
-    config_filename = f"tw_{name}.py"
+    
+    if name:
+        config_filename = f"threadward_{name}.py"
+    else:
+        config_filename = "threadward.py"
+    
     config_path = os.path.join(project_path, config_filename)
     
     # Check if file already exists
