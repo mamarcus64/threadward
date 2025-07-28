@@ -90,7 +90,8 @@ class Worker:
                 stderr=subprocess.PIPE,
                 env=env,
                 text=True,
-                bufsize=1
+                bufsize=0,  # Unbuffered for immediate output
+                universal_newlines=True
             )
             
             print(f"DEBUG: Worker {self.worker_id} subprocess started with PID: {self.process.pid}")
@@ -215,40 +216,37 @@ class Worker:
                 print(f"DEBUG: Worker {self.worker_id} no output available via select")
         except (ImportError, OSError) as e:
             print(f"DEBUG: Worker {self.worker_id} select not available ({e}), using Windows fallback")
-            # On Windows, use a thread-based approach to read from stdout
+            # Windows fallback using threading with timeout
             try:
                 import threading
                 import queue
                 
-                # Check if we already have a result waiting in a queue
-                if not hasattr(self, '_result_queue'):
-                    self._result_queue = queue.Queue()
+                def read_line_with_timeout(process, timeout=0.1):
+                    """Read a line from process stdout with timeout."""
+                    result_queue = queue.Queue()
                     
-                    def read_worker_output():
+                    def reader():
                         try:
-                            while True:
-                                line = self.process.stdout.readline()
-                                if line:
-                                    line = line.strip()
-                                    print(f"DEBUG: Worker {self.worker_id} background thread received: '{line}'")
-                                    if line in ["SUCCESS", "FAILURE"]:
-                                        self._result_queue.put(line)
-                                        break
-                                else:
-                                    # Process ended
-                                    break
-                        except Exception as ex:
-                            print(f"DEBUG: Worker {self.worker_id} background reader exception: {ex}")
+                            line = process.stdout.readline()
+                            if line:
+                                result_queue.put(line.strip())
+                        except:
+                            pass
                     
-                    # Start background reader thread
-                    reader_thread = threading.Thread(target=read_worker_output, daemon=True)
-                    reader_thread.start()
+                    thread = threading.Thread(target=reader, daemon=True)
+                    thread.start()
+                    thread.join(timeout)
+                    
+                    try:
+                        return result_queue.get_nowait()
+                    except queue.Empty:
+                        return None
                 
-                # Check if we have a result
-                try:
-                    result_line = self._result_queue.get_nowait()
-                    print(f"DEBUG: Worker {self.worker_id} got result from queue: '{result_line}'")
-                    
+                # Try to read a line with a short timeout
+                result_line = read_line_with_timeout(self.process, 0.1)
+                print(f"DEBUG: Worker {self.worker_id} Windows fallback got line: '{result_line}'")
+                
+                if result_line and result_line in ["SUCCESS", "FAILURE"]:
                     success = result_line == "SUCCESS"
                     
                     self.current_task.status = "completed" if success else "failed"
@@ -262,16 +260,11 @@ class Worker:
                     self.current_task = None
                     self.status = "idle"
                     
-                    print(f"DEBUG: Worker {self.worker_id} task completed via queue with result: {success}")
+                    print(f"DEBUG: Worker {self.worker_id} task completed via Windows fallback with result: {success}")
                     return success
-                    
-                except queue.Empty:
-                    print(f"DEBUG: Worker {self.worker_id} no result in queue yet")
-                    pass
-                    
+                        
             except Exception as e:
                 print(f"DEBUG: Worker {self.worker_id} Windows fallback failed: {e}")
-                # Last resort fallback
                 pass
         
         print(f"DEBUG: Worker {self.worker_id} task still running")
