@@ -17,7 +17,7 @@ def init_command(name: str = None, project_path: str = "."):
     if name:
         config_filename = f"threadward_{name}.py"
     else:
-        config_filename = "threadward.py"
+        config_filename = "threadward_run.py"
     
     config_path = os.path.join(project_path, config_filename)
     

@@ -171,11 +171,15 @@ class Worker:
             True if task succeeded, False if failed, None if still running
         """
         if self.status != "busy" or self.process is None or self.current_task is None:
+            print(f"DEBUG: Worker {self.worker_id} check_task_completion early return - status: {self.status}, process: {self.process is not None}, task: {self.current_task is not None}")
             return None
+        
+        print(f"DEBUG: Worker {self.worker_id} checking task completion for task {self.current_task.task_id}")
         
         # Check if process has output available
         if self.process.poll() is not None:
             # Process has terminated - this shouldn't happen during normal task execution
+            print(f"DEBUG: Worker {self.worker_id} process terminated unexpectedly with return code: {self.process.returncode}")
             self.status = "idle"
             self.current_task.status = "failed"
             self.current_task.end_time = time.time()
@@ -187,8 +191,10 @@ class Worker:
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
+            print(f"DEBUG: Worker {self.worker_id} using select for task completion check")
             if select.select([self.process.stdout], [], [], 0)[0]:
                 result_line = self.process.stdout.readline().strip()
+                print(f"DEBUG: Worker {self.worker_id} received result line: '{result_line}'")
                 if result_line:
                     success = result_line == "SUCCESS"
                     
@@ -203,36 +209,72 @@ class Worker:
                     self.current_task = None
                     self.status = "idle"
                     
+                    print(f"DEBUG: Worker {self.worker_id} task completed with result: {success}")
                     return success
-        except (ImportError, OSError):
-            # On Windows or systems without select, use a simpler approach
-            # Check if process has new output by attempting a quick peek
+            else:
+                print(f"DEBUG: Worker {self.worker_id} no output available via select")
+        except (ImportError, OSError) as e:
+            print(f"DEBUG: Worker {self.worker_id} select not available ({e}), using Windows fallback")
+            # On Windows, use a thread-based approach to read from stdout
             try:
-                # Use subprocess's built-in poll mechanism
-                if hasattr(self.process.stdout, 'peek'):
-                    # Try to peek at the buffer without consuming it
-                    peeked = self.process.stdout.peek(1)
-                    if peeked:
-                        result_line = self.process.stdout.readline().strip()
-                        if result_line:
-                            success = result_line == "SUCCESS"
-                            
-                            self.current_task.status = "completed" if success else "failed"
-                            self.current_task.end_time = time.time()
-                            
-                            if success:
-                                self.total_tasks_completed += 1
-                            else:
-                                self.total_tasks_failed += 1
-                            
-                            self.current_task = None
-                            self.status = "idle"
-                            
-                            return success
-            except:
-                # Fallback: task completion will be detected when process terminates
+                import threading
+                import queue
+                
+                # Check if we already have a result waiting in a queue
+                if not hasattr(self, '_result_queue'):
+                    self._result_queue = queue.Queue()
+                    
+                    def read_worker_output():
+                        try:
+                            while True:
+                                line = self.process.stdout.readline()
+                                if line:
+                                    line = line.strip()
+                                    print(f"DEBUG: Worker {self.worker_id} background thread received: '{line}'")
+                                    if line in ["SUCCESS", "FAILURE"]:
+                                        self._result_queue.put(line)
+                                        break
+                                else:
+                                    # Process ended
+                                    break
+                        except Exception as ex:
+                            print(f"DEBUG: Worker {self.worker_id} background reader exception: {ex}")
+                    
+                    # Start background reader thread
+                    reader_thread = threading.Thread(target=read_worker_output, daemon=True)
+                    reader_thread.start()
+                
+                # Check if we have a result
+                try:
+                    result_line = self._result_queue.get_nowait()
+                    print(f"DEBUG: Worker {self.worker_id} got result from queue: '{result_line}'")
+                    
+                    success = result_line == "SUCCESS"
+                    
+                    self.current_task.status = "completed" if success else "failed"
+                    self.current_task.end_time = time.time()
+                    
+                    if success:
+                        self.total_tasks_completed += 1
+                    else:
+                        self.total_tasks_failed += 1
+                    
+                    self.current_task = None
+                    self.status = "idle"
+                    
+                    print(f"DEBUG: Worker {self.worker_id} task completed via queue with result: {success}")
+                    return success
+                    
+                except queue.Empty:
+                    print(f"DEBUG: Worker {self.worker_id} no result in queue yet")
+                    pass
+                    
+            except Exception as e:
+                print(f"DEBUG: Worker {self.worker_id} Windows fallback failed: {e}")
+                # Last resort fallback
                 pass
         
+        print(f"DEBUG: Worker {self.worker_id} task still running")
         return None
     
     def shutdown(self) -> None:

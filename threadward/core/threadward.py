@@ -321,16 +321,19 @@ def main():
                     break
             
             if task_data is None:
-                print("FAILURE")
+                print("FAILURE", flush=True)
+                sys.stdout.flush()
                 continue
             
             try:
                 # Execute the task
                 success = execute_task(task_spec, task_data)
-                print("SUCCESS" if success else "FAILURE")
+                print("SUCCESS" if success else "FAILURE", flush=True)
+                sys.stdout.flush()
                 
             except Exception as e:
-                print("FAILURE")
+                print("FAILURE", flush=True)
+                sys.stdout.flush()
     
     finally:
         # Call after_each_worker

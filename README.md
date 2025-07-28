@@ -43,11 +43,11 @@ Or create a default configuration file:
 threadward init
 ```
 
-This creates `threadward.py` in your current directory.
+This creates `threadward_run.py` in your current directory.
 
 ### 2. Edit Your Configuration
 
-Open `threadward_my_experiment.py` (or `threadward.py`) and implement your task:
+Open `threadward_my_experiment.py` (or `threadward_run.py`) and implement your task:
 
 ```python
 import threadward
@@ -79,7 +79,7 @@ python threadward_my_experiment.py
 
 Or if you used the default name:
 ```bash
-python threadward.py
+python threadward_run.py
 ```
 
 That's it! `threadward` will create task folders, manage workers, and execute your tasks across all variable combinations.

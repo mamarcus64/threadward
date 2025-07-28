@@ -13,7 +13,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  threadward init                 Create threadward.py configuration file
+  threadward init                 Create threadward_run.py configuration file
   threadward init experiment_1    Create threadward_experiment_1.py configuration file
   threadward init loop_2 --path /path/to/project    Create configuration in specific directory
         """
@@ -26,7 +26,7 @@ Examples:
     init_parser.add_argument(
         "name",
         nargs="?",
-        help="Optional name for the threadward configuration (creates threadward_{name}.py, or threadward.py if no name)"
+        help="Optional name for the threadward configuration (creates threadward_{name}.py, or threadward_run.py if no name)"
     )
     init_parser.add_argument(
         "--path",
