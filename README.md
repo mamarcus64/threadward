@@ -246,15 +246,16 @@ After running your configuration file, `threadward` creates:
 ```
 YOUR_PROJECT/
 ├── threadward_my_experiment.py  # Your configuration file
-├── task_queue/                  # Created during execution
-│   ├── all_tasks.json
-│   ├── successful_tasks.txt
-│   └── failed_tasks.txt
-├── worker_script.py             # Temporary worker script
-└── [task_folders]/              # Individual task results
-    ├── GD/lr_001/16/seed_0/
-    ├── GD/lr_001/16/seed_1/
-    └── ...
+├── threadward_results/          # All results stored here
+│   ├── task_queue/              # Created during execution
+│   │   ├── all_tasks.json
+│   │   ├── successful_tasks.txt
+│   │   └── failed_tasks.txt
+│   └── [task_folders]/          # Individual task results
+│       ├── GD/lr_001/16/seed_0/
+│       ├── GD/lr_001/16/seed_1/
+│       └── ...
+└── worker_script.py             # Temporary worker script
 ```
 
 ### Worker Management

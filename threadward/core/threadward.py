@@ -28,7 +28,10 @@ class Threadward:
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
-        self.task_queue_path = os.path.join(project_path, "task_queue")
+        
+        # Create results directory structure
+        self.results_path = os.path.join(project_path, "threadward_results")
+        self.task_queue_path = os.path.join(self.results_path, "task_queue")
         
         # Task management
         self.tasks: List[Task] = []
@@ -128,6 +131,8 @@ class Threadward:
         try:
             # Create variable set and call setup function from config module
             variable_set = VariableSet()
+            # Set base path for task folders
+            variable_set._base_path = self.results_path
             
             if not hasattr(self.config_module, 'setup_variable_set'):
                 print("Error: setup_variable_set function not found in configuration")
@@ -158,7 +163,8 @@ class Threadward:
                 
                 self.tasks.append(task)
             
-            # Create task_queue folder and files
+            # Create results directory and task_queue folder
+            os.makedirs(self.results_path, exist_ok=True)
             os.makedirs(self.task_queue_path, exist_ok=True)
             
             # Create empty task queue files
@@ -296,7 +302,7 @@ def main():
     spec.loader.exec_module(task_spec)
     
     # Load all tasks
-    all_tasks_path = os.path.join(os.getcwd(), "task_queue", "all_tasks.json")
+    all_tasks_path = os.path.join(os.getcwd(), "threadward_results", "task_queue", "all_tasks.json")
     with open(all_tasks_path, 'r') as f:
         all_tasks_data = json.load(f)
     

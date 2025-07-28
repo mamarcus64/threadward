@@ -147,13 +147,13 @@ class VariableSet:
                 result[var_name] = string_value
         
         # Add metadata
-        result["_task_folder"] = self._generate_task_folder(combo)
+        result["_task_folder"] = self._generate_task_folder(combo, base_path=getattr(self, '_base_path', None))
         result["_nicknames"] = {var: data["nickname"] for var, data in combo.items()}
         
         return result
     
     def _generate_task_folder(self, combo: Dict[str, Dict[str, str]], 
-                             mode: str = "VARIABLE_SUBFOLDER") -> str:
+                             mode: str = "VARIABLE_SUBFOLDER", base_path: str = None) -> str:
         """Generate task folder path based on variable nicknames."""
         if mode == "VARIABLE_SUBFOLDER":
             # Create nested folders: var1_nickname/var2_nickname/...
@@ -163,7 +163,7 @@ class VariableSet:
                 if var_name in combo:
                     nickname = combo[var_name]["nickname"]
                     folder_parts.append(nickname)
-            return "/".join(folder_parts)
+            folder_path = "/".join(folder_parts)
         
         elif mode == "VARIABLE_UNDERSCORE":
             # Create single folder: var1_nickname_var2_nickname_...
@@ -173,10 +173,17 @@ class VariableSet:
                 if var_name in combo:
                     nickname = combo[var_name]["nickname"]
                     folder_parts.append(nickname)
-            return "_".join(folder_parts)
+            folder_path = "_".join(folder_parts)
         
         else:
             raise ValueError(f"Unknown folder mode: {mode}")
+        
+        # Join with base path if provided
+        if base_path:
+            import os
+            return os.path.join(base_path, folder_path)
+        else:
+            return folder_path
     
     def get_variable_hierarchy(self) -> List[str]:
         """Get the ordered list of variable names."""
