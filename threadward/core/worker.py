@@ -151,7 +151,7 @@ class Worker:
         
         # Check for task completion signal (worker should send result via stdout)
         try:
-            # Non-blocking read attempt
+            # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
             if select.select([self.process.stdout], [], [], 0)[0]:
                 result_line = self.process.stdout.readline().strip()
@@ -170,9 +170,34 @@ class Worker:
                     self.status = "idle"
                     
                     return success
-        except:
-            # If select is not available (Windows), we'll use a different approach
-            pass
+        except (ImportError, OSError):
+            # On Windows or systems without select, use a simpler approach
+            # Check if process has new output by attempting a quick peek
+            try:
+                # Use subprocess's built-in poll mechanism
+                if hasattr(self.process.stdout, 'peek'):
+                    # Try to peek at the buffer without consuming it
+                    peeked = self.process.stdout.peek(1)
+                    if peeked:
+                        result_line = self.process.stdout.readline().strip()
+                        if result_line:
+                            success = result_line == "SUCCESS"
+                            
+                            self.current_task.status = "completed" if success else "failed"
+                            self.current_task.end_time = time.time()
+                            
+                            if success:
+                                self.total_tasks_completed += 1
+                            else:
+                                self.total_tasks_failed += 1
+                            
+                            self.current_task = None
+                            self.status = "idle"
+                            
+                            return success
+            except:
+                # Fallback: task completion will be detected when process terminates
+                pass
         
         return None
     

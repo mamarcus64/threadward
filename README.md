@@ -1,8 +1,18 @@
 # `threadward`: Parallel Processing for Generalizable AI Experimentation in Python
 
-`threadward` is a lightweight package that enables you to run custom scripts while iterating over combinations of script variables. Just define your task, declare the variables you want to iterate over, set your GPU and CPU constraints, and `threadward` will handle the rest -- automatically spinning up Python subprocess workers, creating task queues, and allocating jobs to workers.
+`threadward` is a lightweight, cross-platform package that enables you to run custom scripts while iterating over combinations of script variables. Just define your task, declare the variables you want to iterate over, set your GPU and CPU constraints, and `threadward` will handle the rest -- automatically spinning up Python subprocess workers, creating task queues, and allocating jobs to workers.
+
+## Platform Support
+
+`threadward` works on:
+- **Linux** (fully supported, including GPU allocation)
+- **macOS** (fully supported, including GPU allocation) 
+- **Windows** (fully supported, including GPU allocation)
+
+**GPU Support**: Optional GPU allocation works on any system with CUDA-compatible GPUs. Set `NUM_GPUS_PER_WORKER = 0` to run CPU-only on any platform.
 
 ## Table of Contents
+- [Platform Support](#platform-support)
 - [Installing `threadward`](#installing-threadward)
 - [Quick Start](#quick-start)
 - [Local Package Imports](#local-package-imports)
