@@ -102,7 +102,7 @@ While your experiment is running, you can use interactive commands to monitor pr
 
 - **`show` or `s`** - Display current execution statistics including:
   - Elapsed time and estimated remaining time
-  - Task progress (completed, failed, remaining)
+  - Task progress (total, non-skipped, skipped, succeeded, failed, remaining)
   - Worker status and resource usage
   - CPU, memory, and GPU utilization
 
@@ -124,10 +124,12 @@ Estimated Remaining: 01:23:18
 Average Time per Task: 12.35s
 
 Tasks:
-  Total:        128
-  Succeeded:     76 (59.4%)
-  Failed:         2 (1.6%)
-  Remaining:     50 (39.1%)
+  Total:              128
+  Non-Skipped Total:   96
+  Skipped:             32
+  Succeeded:           60 (62.5%)
+  Failed:               2 (2.1%)
+  Remaining:           34 (35.4%)
 
 Workers (4 total):
   Worker 0: [BUSY] task_000077

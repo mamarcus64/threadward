@@ -36,10 +36,12 @@ class Threadward:
         self.task_queue_path = os.path.join(self.results_path, "task_queue")
         
         # Task management
-        self.tasks: List[Task] = []
+        self.all_tasks: List[Task] = []  # All tasks including skipped ones
+        self.tasks: List[Task] = []      # Only tasks to be executed (non-skipped)
         self.task_queue: Queue = Queue()
         self.succeeded_tasks: List[Task] = []
         self.failed_tasks: List[Task] = []
+        self.skipped_tasks: List[Task] = []
         
         # Worker management
         self.workers: List[Worker] = []
@@ -95,8 +97,14 @@ class Threadward:
         
         if existing_folder_handling == "SKIP":
             print(f"Found {len(existing_folders)} existing task folders - skipping these tasks")
-            # Remove tasks with existing folders
-            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            # Separate tasks into skipped and non-skipped
+            remaining_tasks = []
+            for task in self.tasks:
+                if os.path.exists(task.task_folder):
+                    self.skipped_tasks.append(task)
+                else:
+                    remaining_tasks.append(task)
+            self.tasks = remaining_tasks
             print(f"Remaining tasks to execute: {len(self.tasks)}")
             return True
             
@@ -124,7 +132,14 @@ class Threadward:
         else:
             print(f"Warning: Unknown EXISTING_FOLDER_HANDLING value: {existing_folder_handling}")
             print("Using default behavior (SKIP)")
-            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            # Separate tasks into skipped and non-skipped
+            remaining_tasks = []
+            for task in self.tasks:
+                if os.path.exists(task.task_folder):
+                    self.skipped_tasks.append(task)
+                else:
+                    remaining_tasks.append(task)
+            self.tasks = remaining_tasks
             return True
     
     def generate_tasks(self) -> bool:
@@ -149,7 +164,7 @@ class Threadward:
             combinations = variable_set.generate_combinations()
             
             # Create tasks from combinations
-            self.tasks = []
+            self.all_tasks = []
             for i, combo in enumerate(combinations):
                 task_id = f"task_{i:06d}"
                 
@@ -166,7 +181,10 @@ class Threadward:
                     log_file=log_file
                 )
                 
-                self.tasks.append(task)
+                self.all_tasks.append(task)
+            
+            # Initially, all tasks are to be executed
+            self.tasks = self.all_tasks.copy()
             
             # Create results directory and task_queue folder
             os.makedirs(self.results_path, exist_ok=True)
@@ -194,7 +212,7 @@ class Threadward:
             with open(all_tasks_path, 'w') as f:
                 json.dump([task.to_dict() for task in self.tasks], f, indent=2)
             
-            print(f"Generated {len(self.tasks)} tasks")
+            print(f"Generated {len(self.all_tasks)} total tasks ({len(self.tasks)} to execute, {len(self.skipped_tasks)} skipped)")
             return True
             
         except Exception as e:
@@ -429,10 +447,13 @@ class Threadward:
         current_time = time.time()
         elapsed_time = current_time - self.start_time if self.start_time else 0
         
-        total_tasks = len(self.tasks)
+        # Total tasks includes all tasks (skipped and non-skipped)
+        total_all_tasks = len(self.all_tasks)
+        non_skipped_total = len(self.tasks) + len(self.succeeded_tasks) + len(self.failed_tasks)
+        skipped_count = len(self.skipped_tasks)
         succeeded_count = len(self.succeeded_tasks)
         failed_count = len(self.failed_tasks)
-        remaining_count = total_tasks - succeeded_count - failed_count
+        remaining_count = len(self.tasks) - succeeded_count - failed_count
         
         avg_time_per_task = elapsed_time / max(succeeded_count + failed_count, 1)
         estimated_remaining_time = avg_time_per_task * remaining_count if remaining_count > 0 else 0
@@ -442,7 +463,9 @@ class Threadward:
             "avg_time_per_task": avg_time_per_task,
             "estimated_remaining_time": estimated_remaining_time,
             "tasks": {
-                "total": total_tasks,
+                "total": total_all_tasks,
+                "non_skipped_total": non_skipped_total,
+                "skipped": skipped_count,
                 "succeeded": succeeded_count,
                 "failed": failed_count,
                 "remaining": remaining_count
