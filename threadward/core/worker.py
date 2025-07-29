@@ -350,8 +350,12 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
             remaining_timeout = (self.task_timeout - task_runtime) if self.task_timeout != -1 else 30
             
-            # Use a short check interval but keep trying until timeout
-            check_timeout = min(0.5, remaining_timeout)
+            # If we've already exceeded timeout, use 0 (non-blocking check)
+            if remaining_timeout <= 0:
+                check_timeout = 0
+            else:
+                # Use a short check interval but keep trying until timeout
+                check_timeout = min(0.5, remaining_timeout)
             
             if select.select([self.process.stdout], [], [], check_timeout)[0]:
                 result_line = self.process.stdout.readline().strip()

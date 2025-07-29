@@ -256,7 +256,14 @@ def worker_main(worker_id, config_module, results_path):
                 # Execute the task
                 print(f"DEBUG: Worker {worker_id} starting task execution for '{task_data['task_id']}'", flush=True)
                 sys.stdout.flush()
+                
+                # Save original stdout to ensure we can send results back
+                original_stdout = sys.stdout
+                
                 success = execute_task(config_module, task_data, convert_variables)
+                
+                # Restore stdout and send result to parent process
+                sys.stdout = original_stdout
                 print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
                 sys.stdout.flush()
                 # Include task ID with the result to avoid confusion
@@ -264,7 +271,10 @@ def worker_main(worker_id, config_module, results_path):
                 print(result_msg, flush=True)
                 sys.stdout.flush()
                 # Extra flush to ensure it's sent immediately
-                os.fsync(sys.stdout.fileno())
+                try:
+                    os.fsync(sys.stdout.fileno())
+                except:
+                    pass  # fsync might fail on some file descriptors
                 
             except Exception as e:
                 print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)
