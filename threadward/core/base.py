@@ -171,6 +171,8 @@ class Threadward(ABC):
                 return self.runner.after_each_task(variables, task_folder, log_file)
         
         mock_config = MockConfig(self)
+        # Add the file path to the mock config
+        mock_config.__file__ = config_file_path
         
         # Create and run threadward instance
         threadward_core = ThreadwardCore(config_dir, mock_config)
