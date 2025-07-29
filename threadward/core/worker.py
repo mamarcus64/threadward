@@ -216,7 +216,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             self.current_task.status = "failed"
             self.current_task.end_time = time.time()
             self.total_tasks_failed += 1
-            self.current_task = None
+            # Don't clear current_task yet - the caller needs it
             return False
         
         # Check for task completion signal (worker should send result via stdout)

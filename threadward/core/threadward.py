@@ -332,6 +332,8 @@ class Threadward:
                                 self.failed_tasks.append(task)
                                 self._log_task_result(task, False)
                                 self._handle_task_failure(task)
+                            # Clear the current task after logging
+                            worker.current_task = None
                 
                 # Assign new task if worker is idle
                 if worker.status == "idle" and not self.task_queue.empty():
@@ -360,6 +362,8 @@ class Threadward:
                                 self.failed_tasks.append(task)
                                 self._log_task_result(task, False)
                                 self._handle_task_failure(task)
+                            # Clear the current task after logging
+                            worker.current_task = None
             
             time.sleep(0.1)
     
@@ -380,8 +384,11 @@ class Threadward:
         result_file = "successful_tasks.txt" if success else "failed_tasks.txt"
         result_path = os.path.join(self.task_queue_path, result_file)
         
+        print(f"DEBUG: Logging task {task.task_id} to {result_file}")
+        
         with open(result_path, 'a') as f:
             f.write(f"{task.task_id}\n")
+            f.flush()  # Ensure it's written to disk immediately
     
     def _handle_task_failure(self, task: Task) -> None:
         """Handle a failed task based on FAILURE_HANDLING setting."""
