@@ -167,7 +167,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             return False
         
         try:
-<<<<<<< HEAD
             # Update hierarchical state if needed
             state_changed = self.update_hierarchical_state(task)
             if state_changed:
@@ -175,8 +174,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
             print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
-=======
->>>>>>> b4da4bfd29a091af18fd4f2429364fc07840e1f2
             # Send task ID to worker via stdin
             self.process.stdin.write(f"{task.task_id}\n")
             self.process.stdin.flush()
