@@ -47,12 +47,23 @@ class InteractiveHandler:
         while self.running and self.threadward.is_running:
             try:
                 # Use a non-blocking approach to check for input
-                command = input("> ").strip().lower()
+                command = input("> ").strip()
                 
-                if command in self.commands:
-                    self.commands[command]()
-                elif command:
-                    print(f"Unknown command: '{command}'. Type 'help' for available commands.")
+                # Parse command and arguments
+                parts = command.split()
+                if not parts:
+                    continue
+                    
+                cmd = parts[0].lower()
+                args = parts[1:] if len(parts) > 1 else []
+                
+                if cmd in self.commands:
+                    if cmd in ['show', 's']:
+                        self.show_stats(args)
+                    else:
+                        self.commands[cmd]()
+                elif cmd:
+                    print(f"Unknown command: '{cmd}'. Type 'help' for available commands.")
                 
             except EOFError:
                 # Handle Ctrl+D
@@ -64,8 +75,12 @@ class InteractiveHandler:
                 # Silently ignore other exceptions in the input thread
                 pass
     
-    def show_stats(self):
-        """Display current execution statistics."""
+    def show_stats(self, args=None):
+        """Display current execution statistics.
+        
+        Args:
+            args: List of worker IDs to display specifically, or None for default display
+        """
         stats = self.threadward.get_stats()
         
         print("\n" + "="*60)
@@ -96,8 +111,19 @@ class InteractiveHandler:
         print(f"  Remaining:          {stats['tasks']['remaining']:>6} ({stats['tasks']['remaining']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")
         
         # Worker information
-        print(f"\nWorkers ({len(stats['workers'])} total):")
-        for worker_stats in stats['workers']:
+        workers_to_show = self._get_workers_to_display(stats['workers'], args)
+        
+        if args:
+            print(f"\nWorkers (showing {len(workers_to_show)} of {len(stats['workers'])} total):")
+        else:
+            print(f"\nWorkers ({len(stats['workers'])} total):")
+            
+        for i, worker_stats in enumerate(workers_to_show):
+            # Add ellipsis separator if needed
+            if isinstance(worker_stats, str) and worker_stats == "...":
+                print("  ...")
+                continue
+                
             status = worker_stats['status']
             worker_id = worker_stats['worker_id']
             
@@ -123,13 +149,63 @@ class InteractiveHandler:
         
         print("="*60 + "\n")
     
+    def _get_workers_to_display(self, all_workers, args):
+        """Get the list of workers to display based on arguments.
+        
+        Args:
+            all_workers: List of all worker stats
+            args: List of arguments from command line
+            
+        Returns:
+            List of worker stats to display (may include "..." string for ellipsis)
+        """
+        if args:
+            # Parse specific worker IDs
+            worker_ids = []
+            try:
+                for arg in args:
+                    # Handle comma-separated values: "5,6,7"
+                    if ',' in arg:
+                        worker_ids.extend([int(x.strip()) for x in arg.split(',') if x.strip()])
+                    else:
+                        worker_ids.append(int(arg))
+            except ValueError as e:
+                print(f"Error: Invalid worker ID format. Use numbers only (e.g., 'show 5' or 'show 5,6,7')")
+                return all_workers[:4] if len(all_workers) > 4 else all_workers
+            
+            # Filter workers by requested IDs
+            workers_by_id = {w['worker_id']: w for w in all_workers}
+            result = []
+            for worker_id in worker_ids:
+                if worker_id in workers_by_id:
+                    result.append(workers_by_id[worker_id])
+                else:
+                    print(f"Warning: Worker {worker_id} not found")
+            return result
+        
+        else:
+            # Default behavior: show first 2, last 2 if more than 4 workers
+            if len(all_workers) <= 4:
+                return all_workers
+            else:
+                # Show first 2, ellipsis, last 2
+                result = []
+                result.extend(all_workers[:2])  # First 2
+                result.append("...")  # Ellipsis marker
+                result.extend(all_workers[-2:])  # Last 2
+                return result
+    
     def show_help(self):
         """Display available commands."""
         print("\nAvailable commands:")
-        print("  show, s  - Display current execution statistics")
-        print("  help, h  - Show this help message")
-        print("  quit, q  - Gracefully stop execution and exit")
-        print("  exit     - Same as quit\n")
+        print("  show, s      - Display current execution statistics")
+        print("  show N       - Display statistics for worker N only")
+        print("  show N M...  - Display statistics for workers N, M, etc.")
+        print("  show N,M,P   - Display statistics for workers N, M, P (comma-separated)")
+        print("  help, h      - Show this help message")
+        print("  quit, q      - Gracefully stop execution and exit")
+        print("  exit         - Same as quit")
+        print("\nNote: By default, 'show' displays first 2 and last 2 workers if more than 4 exist\n")
     
     def quit_execution(self):
         """Gracefully stop the execution."""
