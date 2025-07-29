@@ -133,6 +133,17 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
                 return False
             
+            # Give the worker process time to fully initialize before accepting tasks
+            print(f"DEBUG: Worker {self.worker_id} waiting for initialization (2 seconds)")
+            time.sleep(2)
+            
+            # Check again if process is still alive after initialization period
+            if self.process.poll() is not None:
+                print(f"ERROR: Worker {self.worker_id} process terminated during initialization")
+                stderr_output = self.process.stderr.read()
+                print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+                return False
+            
             self.status = "idle"
             self.start_time = time.time()
             
