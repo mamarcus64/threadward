@@ -243,6 +243,37 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 self._debug_print(f"Worker {self.worker_id} process poll: {self.process.poll()}")
                 return False
             
+            # Wait for acknowledgment from worker that task was received
+            ack_received = False
+            ack_timeout = 5  # Wait up to 5 seconds for acknowledgment
+            start_time = time.time()
+            
+            while not ack_received and time.time() - start_time < ack_timeout:
+                if self.process.poll() is not None:
+                    # Process died
+                    return False
+                
+                # Try to read acknowledgment
+                import select
+                if hasattr(select, 'select'):
+                    ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
+                    if ready_to_read:
+                        try:
+                            line = self.process.stdout.readline().strip()
+                            if line == "TASK_RECEIVED":
+                                ack_received = True
+                                self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
+                            elif line:
+                                self._debug_print(f"Worker {self.worker_id} unexpected output: {line}")
+                        except:
+                            pass
+                else:
+                    time.sleep(0.1)
+            
+            if not ack_received:
+                print(f"ERROR: Worker {self.worker_id} did not acknowledge task {task.task_id}")
+                return False
+            
             self.current_task = task
             self.status = "busy"
             task.status = "running"
