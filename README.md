@@ -125,7 +125,7 @@ Average Time per Task: 12.35s
 
 Tasks:
   Total:        128
-  Completed:     76 (59.4%)
+  Succeeded:     76 (59.4%)
   Failed:         2 (1.6%)
   Remaining:     50 (39.1%)
 
@@ -134,9 +134,9 @@ Workers (4 total):
     CPU: 87.2% (max: 92.1%)
     Memory: 2341MB (max: 2456MB)
     GPU Memory: 4096MB (max: 4096MB)
-    Completed: 19, Failed: 0
+    Succeeded: 19, Failed: 0
   Worker 1: [IDLE]
-    Completed: 18, Failed: 1
+    Succeeded: 18, Failed: 1
   ...
 ============================================================
 

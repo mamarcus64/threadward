@@ -38,7 +38,7 @@ class Threadward:
         # Task management
         self.tasks: List[Task] = []
         self.task_queue: Queue = Queue()
-        self.completed_tasks: List[Task] = []
+        self.succeeded_tasks: List[Task] = []
         self.failed_tasks: List[Task] = []
         
         # Worker management
@@ -338,7 +338,7 @@ class Threadward:
                         task = worker.current_task
                         if task is not None:
                             if result:
-                                self.completed_tasks.append(task)
+                                self.succeeded_tasks.append(task)
                                 self._log_task_result(task, True)
                             else:
                                 self.failed_tasks.append(task)
@@ -368,7 +368,7 @@ class Threadward:
                         task = worker.current_task
                         if task is not None:
                             if result:
-                                self.completed_tasks.append(task)
+                                self.succeeded_tasks.append(task)
                                 self._log_task_result(task, True)
                             else:
                                 self.failed_tasks.append(task)
@@ -430,11 +430,11 @@ class Threadward:
         elapsed_time = current_time - self.start_time if self.start_time else 0
         
         total_tasks = len(self.tasks)
-        completed_count = len(self.completed_tasks)
+        succeeded_count = len(self.succeeded_tasks)
         failed_count = len(self.failed_tasks)
-        remaining_count = total_tasks - completed_count - failed_count
+        remaining_count = total_tasks - succeeded_count - failed_count
         
-        avg_time_per_task = elapsed_time / max(completed_count + failed_count, 1)
+        avg_time_per_task = elapsed_time / max(succeeded_count + failed_count, 1)
         estimated_remaining_time = avg_time_per_task * remaining_count if remaining_count > 0 else 0
         
         return {
@@ -443,7 +443,7 @@ class Threadward:
             "estimated_remaining_time": estimated_remaining_time,
             "tasks": {
                 "total": total_tasks,
-                "completed": completed_count,
+                "succeeded": succeeded_count,
                 "failed": failed_count,
                 "remaining": remaining_count
             },

@@ -89,7 +89,7 @@ class InteractiveHandler:
         # Task information
         print(f"\nTasks:")
         print(f"  Total:      {stats['tasks']['total']:>6}")
-        print(f"  Completed:  {stats['tasks']['completed']:>6} ({stats['tasks']['completed']/max(stats['tasks']['total'], 1)*100:.1f}%)")
+        print(f"  Succeeded:  {stats['tasks']['succeeded']:>6} ({stats['tasks']['succeeded']/max(stats['tasks']['total'], 1)*100:.1f}%)")
         print(f"  Failed:     {stats['tasks']['failed']:>6} ({stats['tasks']['failed']/max(stats['tasks']['total'], 1)*100:.1f}%)")
         print(f"  Remaining:  {stats['tasks']['remaining']:>6} ({stats['tasks']['remaining']/max(stats['tasks']['total'], 1)*100:.1f}%)")
         
@@ -117,7 +117,7 @@ class InteractiveHandler:
             if worker_stats['gpu_memory_mb']['current'] > 0:
                 print(f"    GPU Memory: {worker_stats['gpu_memory_mb']['current']:.0f}MB (max: {worker_stats['gpu_memory_mb']['max']:.0f}MB)")
             
-            print(f"    Completed: {worker_stats['total_tasks_completed']}, Failed: {worker_stats['total_tasks_failed']}")
+            print(f"    Succeeded: {worker_stats['total_tasks_succeeded']}, Failed: {worker_stats['total_tasks_failed']}")
         
         print("="*60 + "\n")
     

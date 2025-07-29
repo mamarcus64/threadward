@@ -35,7 +35,7 @@ class Worker:
         self.current_task: Optional[Task] = None
         self.status = "idle"  # idle, busy, shutting_down, stopped
         self.start_time: Optional[float] = None
-        self.total_tasks_completed = 0
+        self.total_tasks_succeeded = 0
         self.total_tasks_failed = 0
         
         # Resource monitoring
@@ -212,11 +212,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     self.current_task.end_time = time.time()
                     
                     if success:
-                        self.total_tasks_completed += 1
+                        self.total_tasks_succeeded += 1
                     else:
                         self.total_tasks_failed += 1
                     
-                    self.current_task = None
+                    # Don't clear current_task here - let the main loop do it
                     self.status = "idle"
                     
                     return success
@@ -256,11 +256,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     self.current_task.end_time = time.time()
                     
                     if success:
-                        self.total_tasks_completed += 1
+                        self.total_tasks_succeeded += 1
                     else:
                         self.total_tasks_failed += 1
                     
-                    self.current_task = None
+                    # Don't clear current_task here - let the main loop do it
                     self.status = "idle"
                     
                     return success
@@ -353,7 +353,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             "status": self.status,
             "gpu_ids": self.gpu_ids,
             "current_task": str(self.current_task) if self.current_task else None,
-            "total_tasks_completed": self.total_tasks_completed,
+            "total_tasks_succeeded": self.total_tasks_succeeded,
             "total_tasks_failed": self.total_tasks_failed,
             "cpu_percent": {
                 "current": self.current_cpu_percent,
