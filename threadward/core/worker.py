@@ -111,7 +111,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Prepare command to run the worker entry code
             python_executable = self._get_python_executable()
             
-            if self.conda_env:
+            if self.conda_env and False:  # Temporarily disable conda for testing
                 # Use conda environment
                 cmd = [
                     "conda", "run", "-n", self.conda_env,
@@ -119,9 +119,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 ]
                 self._debug_print(f"Worker {self.worker_id} using conda command: {' '.join(cmd[:4])} [python code]")
             else:
-                # Use current Python environment
+                # Use current Python environment (conda disabled for testing)
                 cmd = [python_executable, "-c", worker_entry]
-                self._debug_print(f"Worker {self.worker_id} using direct python: {python_executable}")
+                self._debug_print(f"Worker {self.worker_id} using direct python: {python_executable} (conda bypassed for testing)")
             
             self._debug_print(f"Worker {self.worker_id} conda_env: {self.conda_env}")
             self._debug_print(f"Worker {self.worker_id} python_executable: {python_executable}")
@@ -167,6 +167,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                             if line == "WORKER_READY":
                                 ready_received = True
                                 self._debug_print(f"Worker {self.worker_id} signaled ready")
+                                break  # Exit the waiting loop immediately
                             elif line:
                                 self._debug_print(f"Worker {self.worker_id} output: {line}")
                         except:
@@ -174,6 +175,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 else:
                     # Windows fallback - just wait a bit
                     time.sleep(0.1)
+                
+                # Also check if we have any remaining data to read
+                time.sleep(0.05)
             
             if not ready_received:
                 self._debug_print(f"Worker {self.worker_id} did not signal ready within {timeout_seconds} seconds")

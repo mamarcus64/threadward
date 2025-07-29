@@ -174,6 +174,13 @@ def worker_main(worker_id, config_module, results_path):
         
         # Signal that worker is ready to receive tasks
         print("WORKER_READY", flush=True)
+        # Force flush stdout to ensure signal reaches parent immediately
+        import sys
+        sys.stdout.flush()
+        
+        # Small delay to ensure parent has time to process the signal
+        import time
+        time.sleep(0.1)
         
         while True:
             try:
