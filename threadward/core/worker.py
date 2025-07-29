@@ -73,8 +73,6 @@ class Worker:
             True if worker started successfully, False otherwise
         """
         try:
-            print(f"DEBUG: Starting worker {self.worker_id}")
-            
             # Prepare environment variables
             env = os.environ.copy()
             
@@ -111,8 +109,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 # Use current Python environment
                 cmd = [python_executable, "-c", worker_entry]
             
-            print(f"DEBUG: Worker {self.worker_id} command: {cmd[:3]} + [worker_entry_code]")
-            
             # Start the subprocess
             self.process = subprocess.Popen(
                 cmd,
@@ -124,8 +120,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 bufsize=0,  # Unbuffered for immediate output
                 universal_newlines=True
             )
-            
-            print(f"DEBUG: Worker {self.worker_id} subprocess started with PID: {self.process.pid}")
             
             # Check if process started successfully
             if self.process.poll() is not None:
@@ -140,7 +134,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Start monitoring thread
             self._start_monitoring()
             
-            print(f"DEBUG: Worker {self.worker_id} started successfully")
             return True
             
         except Exception as e:
@@ -158,11 +151,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         Returns:
             True if task was assigned successfully, False otherwise
         """
-        print(f"DEBUG: Attempting to assign task {task.task_id} to worker {self.worker_id}")
-        print(f"DEBUG: Worker {self.worker_id} status: {self.status}, process: {self.process is not None}")
-        
         if self.status != "idle" or self.process is None:
-            print(f"DEBUG: Worker {self.worker_id} not ready - status: {self.status}, process exists: {self.process is not None}")
             return False
         
         # Check if process is still alive
@@ -173,13 +162,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             return False
         
         try:
-            print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
-            
             # Send task ID to worker via stdin
             self.process.stdin.write(f"{task.task_id}\n")
             self.process.stdin.flush()
-            
-            print(f"DEBUG: Task {task.task_id} sent successfully to worker {self.worker_id}")
             
             self.current_task = task
             self.status = "busy"
@@ -191,7 +176,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
         except Exception as e:
             print(f"Failed to assign task to worker {self.worker_id}: {e}")
-            print(f"DEBUG: Process state - poll: {self.process.poll()}, stdin: {self.process.stdin}")
             import traceback
             traceback.print_exc()
             return False
@@ -203,15 +187,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             True if task succeeded, False if failed, None if still running
         """
         if self.status != "busy" or self.process is None or self.current_task is None:
-            print(f"DEBUG: Worker {self.worker_id} check_task_completion early return - status: {self.status}, process: {self.process is not None}, task: {self.current_task is not None}")
             return None
-        
-        print(f"DEBUG: Worker {self.worker_id} checking task completion for task {self.current_task.task_id}")
         
         # Check if process has output available
         if self.process.poll() is not None:
             # Process has terminated - this shouldn't happen during normal task execution
-            print(f"DEBUG: Worker {self.worker_id} process terminated unexpectedly with return code: {self.process.returncode}")
             self.status = "idle"
             self.current_task.status = "failed"
             self.current_task.end_time = time.time()
@@ -223,10 +203,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            print(f"DEBUG: Worker {self.worker_id} using select for task completion check")
             if select.select([self.process.stdout], [], [], 0)[0]:
                 result_line = self.process.stdout.readline().strip()
-                print(f"DEBUG: Worker {self.worker_id} received result line: '{result_line}'")
                 if result_line:
                     success = result_line == "SUCCESS"
                     
@@ -241,12 +219,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     self.current_task = None
                     self.status = "idle"
                     
-                    print(f"DEBUG: Worker {self.worker_id} task completed with result: {success}")
                     return success
             else:
-                print(f"DEBUG: Worker {self.worker_id} no output available via select")
         except (ImportError, OSError) as e:
-            print(f"DEBUG: Worker {self.worker_id} select not available ({e}), using Windows fallback")
             # Windows fallback using threading with timeout
             try:
                 import threading
@@ -275,8 +250,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 
                 # Try to read a line with a short timeout
                 result_line = read_line_with_timeout(self.process, 0.1)
-                print(f"DEBUG: Worker {self.worker_id} Windows fallback got line: '{result_line}'")
-                
                 if result_line and result_line in ["SUCCESS", "FAILURE"]:
                     success = result_line == "SUCCESS"
                     
@@ -291,14 +264,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     self.current_task = None
                     self.status = "idle"
                     
-                    print(f"DEBUG: Worker {self.worker_id} task completed via Windows fallback with result: {success}")
                     return success
                         
             except Exception as e:
-                print(f"DEBUG: Worker {self.worker_id} Windows fallback failed: {e}")
                 pass
         
-        print(f"DEBUG: Worker {self.worker_id} task still running")
         return None
     
     def shutdown(self) -> None:

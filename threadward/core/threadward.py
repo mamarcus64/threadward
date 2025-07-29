@@ -9,6 +9,7 @@ from queue import Queue, Empty
 from .task import Task
 from .worker import Worker
 from .variable_set import VariableSet
+from .interactive import InteractiveHandler
 
 try:
     import GPUtil
@@ -48,6 +49,9 @@ class Threadward:
         self.start_time: Optional[float] = None
         self.is_running = False
         self.should_stop = False
+        
+        # Interactive handler
+        self.interactive_handler: Optional[InteractiveHandler] = None
         
         # Load configuration from module
         self._load_configuration()
@@ -300,11 +304,19 @@ class Threadward:
         self.is_running = True
         self.start_time = time.time()
         
+        # Start interactive handler
+        self.interactive_handler = InteractiveHandler(self)
+        self.interactive_handler.start()
+        
         try:
             # Main execution loop
             self._execution_loop()
             
         finally:
+            # Stop interactive handler
+            if self.interactive_handler:
+                self.interactive_handler.stop()
+            
             # Cleanup
             self._shutdown_workers()
             
@@ -383,8 +395,6 @@ class Threadward:
         """Log task result to appropriate file."""
         result_file = "successful_tasks.txt" if success else "failed_tasks.txt"
         result_path = os.path.join(self.task_queue_path, result_file)
-        
-        print(f"DEBUG: Logging task {task.task_id} to {result_file}")
         
         with open(result_path, 'a') as f:
             f.write(f"{task.task_id}\n")

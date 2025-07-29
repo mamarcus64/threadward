@@ -96,6 +96,55 @@ python threadward_run.py
 
 That's it! `threadward` will create task folders, manage workers, and execute your tasks across all variable combinations.
 
+### Interactive Commands During Execution
+
+While your experiment is running, you can use interactive commands to monitor progress and control execution:
+
+- **`show` or `s`** - Display current execution statistics including:
+  - Elapsed time and estimated remaining time
+  - Task progress (completed, failed, remaining)
+  - Worker status and resource usage
+  - CPU, memory, and GPU utilization
+
+- **`help` or `h`** - Show available commands
+
+- **`quit`, `q`, or `exit`** - Gracefully stop execution
+  - Workers will complete their current tasks before shutting down
+  - Progress is saved (use `EXISTING_FOLDER_HANDLING = "SKIP"` to resume)
+
+Example interaction:
+```
+> show
+
+============================================================
+THREADWARD EXECUTION STATUS
+============================================================
+Elapsed Time: 00:15:42
+Estimated Remaining: 01:23:18
+Average Time per Task: 12.35s
+
+Tasks:
+  Total:        128
+  Completed:     76 (59.4%)
+  Failed:         2 (1.6%)
+  Remaining:     50 (39.1%)
+
+Workers (4 total):
+  Worker 0: [BUSY] task_000077
+    CPU: 87.2% (max: 92.1%)
+    Memory: 2341MB (max: 2456MB)
+    GPU Memory: 4096MB (max: 4096MB)
+    Completed: 19, Failed: 0
+  Worker 1: [IDLE]
+    Completed: 18, Failed: 1
+  ...
+============================================================
+
+> quit
+Stopping execution gracefully...
+Workers will finish their current tasks before shutting down.
+```
+
 ## Local Package Imports
 
 One of the key advantages of the new structure is seamless local package imports. If you have a project structure like:
