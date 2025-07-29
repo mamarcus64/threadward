@@ -8,8 +8,13 @@ from .variable_set import VariableSet
 class Threadward(ABC):
     """Abstract base class for Threadward experiment runners."""
     
-    def __init__(self):
-        """Initialize the Threadward runner with default settings."""
+    def __init__(self, debug=False):
+        """Initialize the Threadward runner with default settings.
+        
+        Args:
+            debug: Enable debug output (default: False)
+        """
+        self.debug = debug
         self._constraints = {
             "SUCCESS_CONDITION": "NO_ERROR_AND_VERIFY",
             "OUTPUT_MODE": "LOG_FILE_ONLY", 
@@ -212,5 +217,5 @@ class Threadward(ABC):
         mock_config.__file__ = config_file_path
         
         # Create and run threadward instance
-        threadward_core = ThreadwardCore(config_dir, mock_config)
+        threadward_core = ThreadwardCore(config_dir, mock_config, debug=self.debug)
         threadward_core.run()
