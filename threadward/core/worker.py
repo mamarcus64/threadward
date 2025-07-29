@@ -130,7 +130,10 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             self._debug_print(f"Worker {self.worker_id} conda_env: {self.conda_env}")
             self._debug_print(f"Worker {self.worker_id} python_executable: {python_executable}")
             
-            # Start the subprocess
+            # Start the subprocess with proper unbuffering
+            # Set PYTHONUNBUFFERED to ensure Python doesn't buffer output
+            env["PYTHONUNBUFFERED"] = "1"
+            
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,

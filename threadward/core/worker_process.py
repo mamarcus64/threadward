@@ -263,6 +263,8 @@ def worker_main(worker_id, config_module, results_path):
                 result_msg = f"{task_data['task_id']}:TASK_SUCCESS_RESPONSE" if success else f"{task_data['task_id']}:TASK_FAILURE_RESPONSE"
                 print(result_msg, flush=True)
                 sys.stdout.flush()
+                # Extra flush to ensure it's sent immediately
+                os.fsync(sys.stdout.fileno())
                 
             except Exception as e:
                 print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)
