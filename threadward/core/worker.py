@@ -39,6 +39,7 @@ class Worker:
         self.start_time: Optional[float] = None
         self.total_tasks_succeeded = 0
         self.total_tasks_failed = 0
+        self.output_buffer = []  # Buffer for output lines read while waiting for acknowledgment
         
         # Hierarchical state tracking
         self.current_hierarchical_key: str = ""
@@ -264,7 +265,12 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 ack_received = True
                                 self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
-                                self._debug_print(f"Worker {self.worker_id} unexpected output: {line}")
+                                # Buffer any other output for later processing
+                                self.output_buffer.append(line)
+                                if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                    self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
+                                else:
+                                    self._debug_print(f"Worker {self.worker_id} buffered output: {line}")
                         except:
                             pass
                 else:
@@ -306,6 +312,25 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             self.total_tasks_failed += 1
             # Don't clear current_task yet - the caller needs it
             return False
+        
+        # First check if we have a buffered result
+        for i, line in enumerate(self.output_buffer):
+            if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                # Found a buffered result
+                self.output_buffer.pop(i)
+                success = line == "TASK_SUCCESS_RESPONSE"
+                self._debug_print(f"Worker {self.worker_id} found buffered result: {line}")
+                
+                self.current_task.status = "completed" if success else "failed"
+                self.current_task.end_time = time.time()
+                
+                if success:
+                    self.total_tasks_succeeded += 1
+                else:
+                    self.total_tasks_failed += 1
+                
+                self.status = "idle"
+                return success
         
         # Check for task completion signal (worker should send result via stdout)
         try:
