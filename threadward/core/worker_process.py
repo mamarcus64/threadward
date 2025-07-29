@@ -22,18 +22,25 @@ class TeeOutput:
         self.file.flush()
 
 
-def execute_task(task_spec, task_data):
+def execute_task(task_spec, task_data, convert_variables_func=None):
     """Execute a single task."""
     variables = task_data["variables"]
     task_folder = task_data["task_folder"]
     log_file = task_data["log_file"]
+    nicknames = task_data.get("_nicknames", {})
+    
+    # Convert variables using to_value functions if converter function provided
+    if convert_variables_func:
+        converted_variables = convert_variables_func(variables, nicknames)
+    else:
+        converted_variables = variables
     
     # Create task folder
     os.makedirs(task_folder, exist_ok=True)
     
     # Call before_each_task
     if hasattr(task_spec, 'before_each_task'):
-        task_spec.before_each_task(variables, task_folder, log_file)
+        task_spec.before_each_task(converted_variables, task_folder, log_file)
     
     success = False
     try:
@@ -52,7 +59,7 @@ def execute_task(task_spec, task_data):
                     sys.stderr = TeeOutput(old_stderr, log)
                 
                 # Call the main task method
-                task_spec.task_method(variables, task_folder, log_file)
+                task_spec.task_method(converted_variables, task_folder, log_file)
                 success = True
                 
             finally:
@@ -63,10 +70,10 @@ def execute_task(task_spec, task_data):
         if hasattr(task_spec, 'SUCCESS_CONDITION'):
             if task_spec.SUCCESS_CONDITION == "NO_ERROR_AND_VERIFY":
                 if success and hasattr(task_spec, 'verify_task_success'):
-                    success = task_spec.verify_task_success(variables, task_folder, log_file)
+                    success = task_spec.verify_task_success(converted_variables, task_folder, log_file)
             elif task_spec.SUCCESS_CONDITION == "VERIFY_ONLY":
                 if hasattr(task_spec, 'verify_task_success'):
-                    success = task_spec.verify_task_success(variables, task_folder, log_file)
+                    success = task_spec.verify_task_success(converted_variables, task_folder, log_file)
             elif task_spec.SUCCESS_CONDITION == "ALWAYS_SUCCESS":
                 success = True
             # NO_ERROR_ONLY uses the existing success value
@@ -80,17 +87,56 @@ def execute_task(task_spec, task_data):
     finally:
         # Call after_each_task
         if hasattr(task_spec, 'after_each_task'):
-            task_spec.after_each_task(variables, task_folder, log_file)
+            task_spec.after_each_task(converted_variables, task_folder, log_file)
     
     return success
 
 
 def worker_main(worker_id, config_module, results_path):
     """Main worker process loop."""
-    # Load all tasks
+    # Load all tasks and converter info
     all_tasks_path = os.path.join(results_path, "task_queue", "all_tasks.json")
     with open(all_tasks_path, 'r') as f:
-        all_tasks_data = json.load(f)
+        tasks_json = json.load(f)
+    
+    # Handle both old and new format
+    if isinstance(tasks_json, list):
+        # Old format - just a list of tasks
+        all_tasks_data = tasks_json
+        converter_info = {}
+    else:
+        # New format with converter info
+        all_tasks_data = tasks_json.get("tasks", [])
+        converter_info = tasks_json.get("converter_info", {})
+    
+    # Function to convert variables using to_value functions
+    def convert_variables(variables, nicknames=None):
+        """Convert string variables to objects using to_value functions."""
+        converted = {}
+        for var_name, string_value in variables.items():
+            if var_name in converter_info:
+                # This variable has a converter
+                converter_func_name = converter_info[var_name]
+                if hasattr(config_module, converter_func_name):
+                    converter_func = getattr(config_module, converter_func_name)
+                    nickname = nicknames.get(var_name, string_value) if nicknames else string_value
+                    try:
+                        converted[var_name] = converter_func(string_value, nickname)
+                    except Exception as e:
+                        print(f"Warning: Failed to convert {var_name}: {e}", flush=True)
+                        converted[var_name] = string_value
+                else:
+                    # No converter function found, use string value
+                    converted[var_name] = string_value
+            else:
+                # No converter needed, use string value
+                converted[var_name] = string_value
+        return converted
+    
+    # Track hierarchical state
+    current_hierarchical_key = ""
+    current_hierarchical_values = {}
+    current_converted_hierarchical_values = {}
     
     # Call before_each_worker
     if hasattr(config_module, 'before_each_worker'):
@@ -118,8 +164,42 @@ def worker_main(worker_id, config_module, results_path):
                 continue
             
             try:
+                # Check for hierarchical state change
+                hierarchy_info = task_data.get("hierarchy_info", {})
+                if hierarchy_info:
+                    hierarchical_vars = hierarchy_info.get("hierarchical_variables", [])
+                    task_hierarchical_values = {var: task_data["variables"][var] 
+                                               for var in hierarchical_vars 
+                                               if var in task_data["variables"]}
+                    
+                    # Compute hierarchical key for this task
+                    task_hierarchical_key = "|".join(
+                        f"{var}={str(task_hierarchical_values[var])}" 
+                        for var in hierarchical_vars if var in task_hierarchical_values
+                    )
+                    
+                    # Check if we need to load new hierarchical values
+                    if task_hierarchical_key != current_hierarchical_key:
+                        # Unload previous values if any
+                        if current_hierarchical_key and hasattr(config_module, 'on_hierarchical_unload'):
+                            # Pass converted values to unload
+                            config_module.on_hierarchical_unload(current_converted_hierarchical_values, worker_id)
+                        
+                        # Convert hierarchical values for loading
+                        task_nicknames = task_data.get("_nicknames", {})
+                        converted_hierarchical_values = convert_variables(task_hierarchical_values, task_nicknames)
+                        
+                        # Load new values
+                        if hasattr(config_module, 'on_hierarchical_load'):
+                            # Pass converted values to load
+                            config_module.on_hierarchical_load(converted_hierarchical_values, worker_id)
+                        
+                        current_hierarchical_key = task_hierarchical_key
+                        current_hierarchical_values = task_hierarchical_values
+                        current_converted_hierarchical_values = converted_hierarchical_values
+                
                 # Execute the task
-                success = execute_task(config_module, task_data)
+                success = execute_task(config_module, task_data, convert_variables)
                 print("SUCCESS" if success else "FAILURE", flush=True)
                 sys.stdout.flush()
                 
@@ -128,6 +208,10 @@ def worker_main(worker_id, config_module, results_path):
                 sys.stdout.flush()
     
     finally:
+        # Unload any remaining hierarchical values
+        if current_hierarchical_key and hasattr(config_module, 'on_hierarchical_unload'):
+            config_module.on_hierarchical_unload(current_converted_hierarchical_values, worker_id)
+        
         # Call after_each_worker
         if hasattr(config_module, 'after_each_worker'):
             config_module.after_each_worker(worker_id)
@@ -187,6 +271,14 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
             
             def after_each_task(self, variables, task_folder, log_file):
                 return self.runner.after_each_task(variables, task_folder, log_file)
+            
+            def on_hierarchical_load(self, hierarchical_values, worker_id):
+                if hasattr(self.runner, 'on_hierarchical_load'):
+                    return self.runner.on_hierarchical_load(hierarchical_values, worker_id)
+            
+            def on_hierarchical_unload(self, hierarchical_values, worker_id):
+                if hasattr(self.runner, 'on_hierarchical_unload'):
+                    return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
         config_module = ModuleWrapper(runner_instance)
     

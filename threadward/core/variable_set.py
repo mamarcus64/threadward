@@ -55,14 +55,6 @@ class VariableSet:
         if to_value:
             self.variable_converters[name] = to_value
     
-    def add_converter(self, variable_name: str, converter: Callable[[str, str], Any]) -> None:
-        """Add a converter function for a variable.
-        
-        Args:
-            variable_name: Name of the variable
-            converter: Function that takes (string_value, nickname) and returns converted value
-        """
-        self.variable_converters[variable_name] = converter
     
     def generate_combinations(self) -> List[Dict[str, Any]]:
         """Generate all valid variable combinations using hierarchical retention.
