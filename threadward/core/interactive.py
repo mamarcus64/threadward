@@ -89,8 +89,8 @@ class InteractiveHandler:
         # Task information
         print(f"\nTasks:")
         print(f"  Total:              {stats['tasks']['total']:>6}")
-        print(f"  Non-Skipped Total:  {stats['tasks']['non_skipped_total']:>6}")
         print(f"  Skipped:            {stats['tasks']['skipped']:>6}")
+        print(f"  Non-Skipped Total:  {stats['tasks']['non_skipped_total']:>6}")
         print(f"  Succeeded:          {stats['tasks']['succeeded']:>6} ({stats['tasks']['succeeded']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")
         print(f"  Failed:             {stats['tasks']['failed']:>6} ({stats['tasks']['failed']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")
         print(f"  Remaining:          {stats['tasks']['remaining']:>6} ({stats['tasks']['remaining']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")

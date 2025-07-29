@@ -125,8 +125,8 @@ Average Time per Task: 12.35s
 
 Tasks:
   Total:              128
-  Non-Skipped Total:   96
   Skipped:             32
+  Non-Skipped Total:   96
   Succeeded:           60 (62.5%)
   Failed:               2 (2.1%)
   Remaining:           34 (35.4%)
