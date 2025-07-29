@@ -266,8 +266,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 ack_received = True
                                 self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
-                                # Only buffer task results, ignore debug output
-                                if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                # Check if it's a task result with ID
+                                if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                                     self.output_buffer.append(line)
                                     self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
                                 elif "DEBUG:" not in line and line != "WORKER_READY":
@@ -318,25 +318,26 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             return False
         
         # First check if we have a buffered result for the current task
-        # Only check buffer if we haven't already checked for this task
         task_id = self.current_task.task_id
         for i, line in enumerate(self.output_buffer):
-            if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
-                # Found a buffered result - make sure it's for the current task
-                self.output_buffer.pop(i)
-                success = line == "TASK_SUCCESS_RESPONSE"
-                self._debug_print(f"Worker {self.worker_id} found buffered result for {task_id}: {line}")
-                
-                self.current_task.status = "completed" if success else "failed"
-                self.current_task.end_time = time.time()
-                
-                if success:
-                    self.total_tasks_succeeded += 1
-                else:
-                    self.total_tasks_failed += 1
-                
-                self.status = "idle"
-                return success
+            if ":" in line:
+                result_task_id, result_type = line.split(":", 1)
+                if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                    # Found the result for current task
+                    self.output_buffer.pop(i)
+                    success = result_type == "TASK_SUCCESS_RESPONSE"
+                    self._debug_print(f"Worker {self.worker_id} found buffered result for {task_id}: {result_type}")
+                    
+                    self.current_task.status = "completed" if success else "failed"
+                    self.current_task.end_time = time.time()
+                    
+                    if success:
+                        self.total_tasks_succeeded += 1
+                    else:
+                        self.total_tasks_failed += 1
+                    
+                    self.status = "idle"
+                    return success
         
         # Check for task completion signal (worker should send result via stdout)
         try:
@@ -352,21 +353,27 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
             if select.select([self.process.stdout], [], [], check_timeout)[0]:
                 result_line = self.process.stdout.readline().strip()
-                if result_line:
-                    success = result_line == "TASK_SUCCESS_RESPONSE"
-                    
-                    self.current_task.status = "completed" if success else "failed"
-                    self.current_task.end_time = time.time()
-                    
-                    if success:
-                        self.total_tasks_succeeded += 1
+                if result_line and ":" in result_line:
+                    result_task_id, result_type = result_line.split(":", 1)
+                    if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                        success = result_type == "TASK_SUCCESS_RESPONSE"
+                        
+                        self.current_task.status = "completed" if success else "failed"
+                        self.current_task.end_time = time.time()
+                        
+                        if success:
+                            self.total_tasks_succeeded += 1
+                        else:
+                            self.total_tasks_failed += 1
+                        
+                        # Don't clear current_task here - let the main loop do it
+                        self.status = "idle"
+                        
+                        return success
                     else:
-                        self.total_tasks_failed += 1
-                    
-                    # Don't clear current_task here - let the main loop do it
-                    self.status = "idle"
-                    
-                    return success
+                        # Result for a different task - buffer it
+                        self.output_buffer.append(result_line)
+                        self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
         except (ImportError, OSError) as e:
             # Windows fallback using threading with timeout
             try:

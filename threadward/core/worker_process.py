@@ -259,7 +259,9 @@ def worker_main(worker_id, config_module, results_path):
                 success = execute_task(config_module, task_data, convert_variables)
                 print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
                 sys.stdout.flush()
-                print("TASK_SUCCESS_RESPONSE" if success else "TASK_FAILURE_RESPONSE", flush=True)
+                # Include task ID with the result to avoid confusion
+                result_msg = f"{task_data['task_id']}:TASK_SUCCESS_RESPONSE" if success else f"{task_data['task_id']}:TASK_FAILURE_RESPONSE"
+                print(result_msg, flush=True)
                 sys.stdout.flush()
                 
             except Exception as e:
