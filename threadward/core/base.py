@@ -26,7 +26,8 @@ class Threadward(ABC):
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
             "EXISTING_FOLDER_HANDLING": "SKIP",
             "ENABLE_HIERARCHICAL_RETENTION": True,
-            "HIERARCHY_DEPTH": None  # None means auto-detect (all vars except last)
+            "HIERARCHY_DEPTH": None,  # None means auto-detect (all vars except last)
+            "TASK_TIMEOUT": 30  # Timeout in seconds for task completion, -1 for no timeout
         }
     
     def set_constraints(self, **kwargs):

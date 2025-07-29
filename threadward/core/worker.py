@@ -74,16 +74,18 @@ class Worker:
             import sys
             return sys.executable
     
-    def start(self, config_file_path: str, results_path: str) -> bool:
+    def start(self, config_file_path: str, results_path: str, task_timeout: float = 30) -> bool:
         """Start the worker subprocess.
         
         Args:
             config_file_path: Path to the configuration file
             results_path: Path to the results directory
+            task_timeout: Timeout in seconds for task completion (-1 for no timeout)
             
         Returns:
             True if worker started successfully, False otherwise
         """
+        self.task_timeout = task_timeout
         try:
             # Prepare environment variables
             env = os.environ.copy()
@@ -111,7 +113,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Prepare command to run the worker entry code
             python_executable = self._get_python_executable()
             
-            if self.conda_env and False:  # Temporarily disable conda for testing
+            if self.conda_env:  # Re-enable conda
                 # Use conda environment
                 cmd = [
                     "conda", "run", "-n", self.conda_env,
@@ -278,7 +280,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            if select.select([self.process.stdout], [], [], 0)[0]:
+            # Use configured timeout (-1 means no timeout)
+            timeout = None if self.task_timeout == -1 else self.task_timeout
+            if select.select([self.process.stdout], [], [], timeout)[0]:
                 result_line = self.process.stdout.readline().strip()
                 if result_line:
                     success = result_line == "TASK_SUCCESS_RESPONSE"
@@ -323,7 +327,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         return None
                 
                 # Try to read a line with a short timeout
-                result_line = read_line_with_timeout(self.process, 0.1)
+                # Use configured timeout (-1 means no timeout)
+                timeout = None if self.task_timeout == -1 else self.task_timeout
+                result_line = read_line_with_timeout(self.process, timeout)
                 if result_line and result_line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                     success = result_line == "TASK_SUCCESS_RESPONSE"
                     

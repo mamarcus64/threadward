@@ -62,7 +62,8 @@ class {class_name}(threadward.Threadward):
             INCLUDE_GPUS=None,
             FAILURE_HANDLING="PRINT_FAILURE_AND_CONTINUE",
             TASK_FOLDER_LOCATION="VARIABLE_SUBFOLDER",
-            EXISTING_FOLDER_HANDLING="SKIP"
+            EXISTING_FOLDER_HANDLING="SKIP",
+            TASK_TIMEOUT=30  # Timeout in seconds (-1 for no timeout)
         )
     
     def task_method(self, variables, task_folder, log_file):

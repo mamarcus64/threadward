@@ -301,7 +301,9 @@ class Threadward:
         try:
             success_count = 0
             for worker in self.workers:
-                if worker.start(self.config_file_path, self.results_path):
+                # Get task timeout from config module
+                task_timeout = getattr(self.config_module, 'TASK_TIMEOUT', 30)
+                if worker.start(self.config_file_path, self.results_path, task_timeout):
                     success_count += 1
                 else:
                     print(f"Failed to start worker {worker.worker_id}")
