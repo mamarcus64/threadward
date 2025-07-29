@@ -145,8 +145,13 @@ def worker_main(worker_id, config_module, results_path):
     try:
         # Main worker loop
         while True:
-            # Wait for task assignment or shutdown signal
-            line = input().strip()
+            try:
+                # Wait for task assignment or shutdown signal
+                line = input().strip()
+            except EOFError:
+                # Parent process closed stdin, worker should exit
+                print("INFO: Parent process closed stdin, worker exiting", flush=True)
+                break
             
             if line == "SHUT_DOWN":
                 break

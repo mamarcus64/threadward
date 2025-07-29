@@ -175,8 +175,12 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
             # Send task ID to worker via stdin
-            self.process.stdin.write(f"{task.task_id}\n")
-            self.process.stdin.flush()
+            if self.process.stdin and not self.process.stdin.closed:
+                self.process.stdin.write(f"{task.task_id}\n")
+                self.process.stdin.flush()
+            else:
+                print(f"ERROR: Worker {self.worker_id} stdin is closed")
+                return False
             
             self.current_task = task
             self.status = "busy"
@@ -290,9 +294,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         self.status = "shutting_down"
         
         try:
-            # Send shutdown signal
-            self.process.stdin.write("SHUT_DOWN\n")
-            self.process.stdin.flush()
+            # Send shutdown signal if stdin is still open
+            if self.process.stdin and not self.process.stdin.closed:
+                self.process.stdin.write("SHUT_DOWN\n")
+                self.process.stdin.flush()
+                self.process.stdin.close()
             
             # Wait for process to terminate
             self.process.wait(timeout=10)
@@ -300,11 +306,19 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         except subprocess.TimeoutExpired:
             # Force terminate if it doesn't shut down gracefully
             self.process.terminate()
-            self.process.wait(timeout=5)
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Force kill if terminate fails
+                self.process.kill()
             
-        except:
-            # Force kill if terminate fails
-            self.process.kill()
+        except Exception as e:
+            # Handle any other exceptions during shutdown
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            except:
+                self.process.kill()
             
         finally:
             self.status = "stopped"
