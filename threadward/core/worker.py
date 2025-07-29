@@ -145,42 +145,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
                 return False
             
-            # Wait for worker to signal it's ready to receive tasks
-            self._debug_print(f"Worker {self.worker_id} waiting for WORKER_READY signal")
-            ready_received = False
-            timeout_start = time.time()
-            timeout_seconds = 10  # Give up after 10 seconds
-            
-            while not ready_received and time.time() - timeout_start < timeout_seconds:
-                if self.process.poll() is not None:
-                    # Process terminated during initialization
-                    break
-                
-                # Try to read a line from stdout (non-blocking)
-                import select
-                if hasattr(select, 'select'):
-                    # Unix/Linux/macOS
-                    ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
-                    if ready_to_read:
-                        try:
-                            line = self.process.stdout.readline().strip()
-                            if line == "WORKER_READY":
-                                ready_received = True
-                                self._debug_print(f"Worker {self.worker_id} signaled ready")
-                                break  # Exit the waiting loop immediately
-                            elif line:
-                                self._debug_print(f"Worker {self.worker_id} output: {line}")
-                        except:
-                            pass
-                else:
-                    # Windows fallback - just wait a bit
-                    time.sleep(0.1)
-                
-                # Also check if we have any remaining data to read
-                time.sleep(0.05)
-            
-            if not ready_received:
-                self._debug_print(f"Worker {self.worker_id} did not signal ready within {timeout_seconds} seconds")
+            # Give worker a brief moment to initialize, then start sending tasks
+            self._debug_print(f"Worker {self.worker_id} waiting 1 second for basic initialization")
+            time.sleep(1)
             
             # Check if process is still alive after initialization period
             if self.process.poll() is not None:

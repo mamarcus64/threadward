@@ -250,8 +250,10 @@ def worker_main(worker_id, config_module, results_path):
                 
                 # Execute the task
                 print(f"DEBUG: Worker {worker_id} starting task execution for '{task_data['task_id']}'", flush=True)
+                sys.stdout.flush()
                 success = execute_task(config_module, task_data, convert_variables)
                 print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
+                sys.stdout.flush()
                 print("SUCCESS" if success else "FAILURE", flush=True)
                 sys.stdout.flush()
                 
