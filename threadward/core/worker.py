@@ -343,37 +343,41 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            # For the first check, wait longer to allow task to complete
-            # Check how long the task has been running
+            # Keep checking until we reach the task timeout
             task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
-            if task_runtime < 2.0:  # If task just started, wait a bit longer
-                check_timeout = min(2.0, self.task_timeout if self.task_timeout != -1 else 2.0)
-            else:
-                check_timeout = min(0.1, self.task_timeout if self.task_timeout != -1 else 0.1)
+            remaining_timeout = (self.task_timeout - task_runtime) if self.task_timeout != -1 else 30
+            
+            # Use a short check interval but keep trying until timeout
+            check_timeout = min(0.5, remaining_timeout)
             
             if select.select([self.process.stdout], [], [], check_timeout)[0]:
                 result_line = self.process.stdout.readline().strip()
-                if result_line and ":" in result_line:
-                    result_task_id, result_type = result_line.split(":", 1)
-                    if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
-                        success = result_type == "TASK_SUCCESS_RESPONSE"
-                        
-                        self.current_task.status = "completed" if success else "failed"
-                        self.current_task.end_time = time.time()
-                        
-                        if success:
-                            self.total_tasks_succeeded += 1
+                if result_line:
+                    # Check if it's a task result
+                    if ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
+                        result_task_id, result_type = result_line.split(":", 1)
+                        if result_task_id == task_id:
+                            success = result_type == "TASK_SUCCESS_RESPONSE"
+                            
+                            self.current_task.status = "completed" if success else "failed"
+                            self.current_task.end_time = time.time()
+                            
+                            if success:
+                                self.total_tasks_succeeded += 1
+                            else:
+                                self.total_tasks_failed += 1
+                            
+                            # Don't clear current_task here - let the main loop do it
+                            self.status = "idle"
+                            
+                            return success
                         else:
-                            self.total_tasks_failed += 1
-                        
-                        # Don't clear current_task here - let the main loop do it
-                        self.status = "idle"
-                        
-                        return success
-                    else:
-                        # Result for a different task - buffer it
-                        self.output_buffer.append(result_line)
-                        self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
+                            # Result for a different task - buffer it
+                            self.output_buffer.append(result_line)
+                            self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
+                    elif "DEBUG:" not in result_line:
+                        # Non-debug output that's not a result
+                        self._debug_print(f"Worker {self.worker_id} output: {result_line}")
         except (ImportError, OSError) as e:
             # Windows fallback using threading with timeout
             try:
@@ -423,6 +427,17 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         
             except Exception as e:
                 pass
+        
+        # Check if we've exceeded the task timeout
+        task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
+        if self.task_timeout != -1 and task_runtime > self.task_timeout:
+            # Task timed out
+            self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} timed out after {task_runtime:.1f}s")
+            self.current_task.status = "failed"
+            self.current_task.end_time = time.time()
+            self.total_tasks_failed += 1
+            self.status = "idle"
+            return False
         
         return None
     
