@@ -51,8 +51,8 @@ def _create_config_file(config_path: str, name: str):
 import threadward
 
 class {class_name}(threadward.Threadward):
-    def __init__(self, debug=False):
-        super().__init__(debug=debug)
+    def __init__(self, debug=False, results_folder="threadward_results"):
+        super().__init__(debug=debug, results_folder=results_folder)
         self.set_constraints(
             SUCCESS_CONDITION="NO_ERROR_AND_VERIFY",
             OUTPUT_MODE="LOG_FILE_ONLY",
@@ -80,11 +80,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run threadward experiments')
     parser.add_argument('--debug', action='store_true', 
                        help='Enable debug output for troubleshooting')
+    parser.add_argument('--results-folder', default='threadward_results',
+                       help='Name of the results folder (default: threadward_results)')
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
-    runner = {class_name}(debug=args.debug)
+    runner = {class_name}(debug=args.debug, results_folder=args.results_folder)
     runner.run()
 '''
     

@@ -20,21 +20,23 @@ except ImportError:
 class Threadward:
     """Main coordinator class for threadward execution."""
     
-    def __init__(self, project_path: str, config_module, debug: bool = False):
+    def __init__(self, project_path: str, config_module, debug: bool = False, results_folder: str = "threadward_results"):
         """Initialize Threadward coordinator.
         
         Args:
             project_path: Path to the project directory
             config_module: The loaded configuration module
             debug: Enable debug output (default: False)
+            results_folder: Name of the results folder (default: "threadward_results")
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
         self.config_file_path = getattr(config_module, '__file__', None)
         self.debug = debug
+        self.results_folder = results_folder
         
         # Create results directory structure
-        self.results_path = os.path.join(project_path, "threadward_results")
+        self.results_path = os.path.join(project_path, results_folder)
         self.task_queue_path = os.path.join(self.results_path, "task_queue")
         
         # Task management
