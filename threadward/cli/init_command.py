@@ -47,11 +47,12 @@ def _create_config_file(config_path: str, name: str):
     else:
         class_name = "Runner"
     
-    content = f'''import threadward
+    content = f'''import argparse
+import threadward
 
 class {class_name}(threadward.Threadward):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, debug=False):
+        super().__init__(debug=debug)
         self.set_constraints(
             SUCCESS_CONDITION="NO_ERROR_AND_VERIFY",
             OUTPUT_MODE="LOG_FILE_ONLY",
@@ -73,8 +74,16 @@ class {class_name}(threadward.Threadward):
     def setup_variable_set(self, variable_set):
         pass
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run threadward experiments')
+    parser.add_argument('--debug', action='store_true', 
+                       help='Enable debug output for troubleshooting')
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    runner = {class_name}()
+    args = parse_args()
+    runner = {class_name}(debug=args.debug)
     runner.run()
 '''
     
