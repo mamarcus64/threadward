@@ -20,23 +20,27 @@ class Worker:
     """Represents a subprocess worker that executes tasks."""
     
     def __init__(self, worker_id: int, gpu_ids: List[int] = None, 
-                 conda_env: Optional[str] = None):
+                 conda_env: Optional[str] = None, debug: bool = False):
         """Initialize a worker.
         
         Args:
             worker_id: Unique identifier for this worker
             gpu_ids: List of GPU IDs assigned to this worker
             conda_env: Name of conda environment to use
+            debug: Enable debug output (default: False)
         """
         self.worker_id = worker_id
         self.gpu_ids = gpu_ids or []
         self.conda_env = conda_env
+        self.debug = debug
         self.process: Optional[subprocess.Popen] = None
         self.current_task: Optional[Task] = None
         self.status = "idle"  # idle, busy, shutting_down, stopped
         self.start_time: Optional[float] = None
         self.total_tasks_succeeded = 0
         self.total_tasks_failed = 0
+        self.output_buffer = []  # Buffer for output lines read while waiting for acknowledgment
+        self.pending_result = None  # Result from a previous task that arrived late
         
         # Hierarchical state tracking
         self.current_hierarchical_key: str = ""
@@ -55,6 +59,11 @@ class Worker:
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_monitoring = threading.Event()
     
+    def _debug_print(self, message: str):
+        """Print debug message if debug mode is enabled."""
+        if self.debug:
+            print(message, flush=True)
+    
     @staticmethod
     def _get_python_executable() -> str:
         """Get the Python executable, preferring 'python' but falling back to 'python3'."""
@@ -67,16 +76,18 @@ class Worker:
             import sys
             return sys.executable
     
-    def start(self, config_file_path: str, results_path: str) -> bool:
+    def start(self, config_file_path: str, results_path: str, task_timeout: float = 30) -> bool:
         """Start the worker subprocess.
         
         Args:
             config_file_path: Path to the configuration file
             results_path: Path to the results directory
+            task_timeout: Timeout in seconds for task completion (-1 for no timeout)
             
         Returns:
             True if worker started successfully, False otherwise
         """
+        self.task_timeout = task_timeout
         try:
             # Prepare environment variables
             env = os.environ.copy()
@@ -104,17 +115,19 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Prepare command to run the worker entry code
             python_executable = self._get_python_executable()
             
-            if self.conda_env:
-                # Use conda environment
-                cmd = [
-                    "conda", "run", "-n", self.conda_env,
-                    python_executable, "-c", worker_entry
-                ]
-            else:
-                # Use current Python environment
-                cmd = [python_executable, "-c", worker_entry]
+            # Use the same Python executable as the parent process
+            # This inherits the exact same environment (conda, virtualenv, etc.)
+            import sys
+            cmd = [sys.executable, "-c", worker_entry]
+            self._debug_print(f"Worker {self.worker_id} using parent python executable: {sys.executable}")
             
-            # Start the subprocess
+            self._debug_print(f"Worker {self.worker_id} conda_env: {self.conda_env}")
+            self._debug_print(f"Worker {self.worker_id} python_executable: {python_executable}")
+            
+            # Start the subprocess with proper unbuffering
+            # Set PYTHONUNBUFFERED to ensure Python doesn't buffer output
+            env["PYTHONUNBUFFERED"] = "1"
+            
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -131,6 +144,23 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 print(f"ERROR: Worker {self.worker_id} process terminated immediately")
                 stderr_output = self.process.stderr.read()
                 print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+                return False
+            
+            # Give worker a brief moment to initialize, then start sending tasks
+            self._debug_print(f"Worker {self.worker_id} waiting 1 second for basic initialization")
+            time.sleep(1)
+            
+            # Check if process is still alive after initialization period
+            if self.process.poll() is not None:
+                print(f"ERROR: Worker {self.worker_id} process terminated during initialization")
+                self._debug_print(f"Worker {self.worker_id} return code: {self.process.returncode}")
+                stderr_output = self.process.stderr.read()
+                stdout_output = self.process.stdout.read()
+                print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+                self._debug_print(f"Worker {self.worker_id} stdout: {stdout_output}")
+                if self.conda_env:
+                    self._debug_print(f"Conda environment '{self.conda_env}' may not exist or be accessible")
+                    self._debug_print(f"Try running: conda info --envs")
                 return False
             
             self.status = "idle"
@@ -162,24 +192,91 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         # Check if process is still alive
         if self.process.poll() is not None:
             print(f"ERROR: Worker {self.worker_id} process has terminated (return code: {self.process.returncode})")
+            self._debug_print(f"Worker {self.worker_id} process pid: {self.process.pid}")
+            self._debug_print(f"Worker {self.worker_id} current task: {self.current_task.task_id if self.current_task else 'None'}")
             stderr_output = self.process.stderr.read()
             print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+            # Try to read any remaining stdout as well
+            try:
+                stdout_output = self.process.stdout.read()
+                if stdout_output:
+                    self._debug_print(f"Worker {self.worker_id} final stdout: {stdout_output}")
+            except:
+                pass
             return False
         
         try:
             # Update hierarchical state if needed
             state_changed = self.update_hierarchical_state(task)
             if state_changed:
-                print(f"DEBUG: Worker {self.worker_id} hierarchical state changed to: {task.hierarchical_key}")
+                self._debug_print(f"Worker {self.worker_id} hierarchical state changed to: {task.hierarchical_key}")
             
-            print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
+            self._debug_print(f"Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
             # Send task ID to worker via stdin
             if self.process.stdin and not self.process.stdin.closed:
-                self.process.stdin.write(f"{task.task_id}\n")
-                self.process.stdin.flush()
+                try:
+                    self.process.stdin.write(f"{task.task_id}\n")
+                    self.process.stdin.flush()
+                except BrokenPipeError as e:
+                    print(f"ERROR: Worker {self.worker_id} broken pipe when writing task ID: {e}")
+                    self._debug_print(f"Worker {self.worker_id} process poll: {self.process.poll()}")
+                    self._debug_print(f"Worker {self.worker_id} process pid: {self.process.pid}")
+                    # Check if process is still alive
+                    if self.process.poll() is not None:
+                        self._debug_print(f"Worker {self.worker_id} process has terminated with return code: {self.process.poll()}")
+                        # Try to read any remaining stderr
+                        try:
+                            stderr_output = self.process.stderr.read()
+                            if stderr_output:
+                                self._debug_print(f"Worker {self.worker_id} final stderr: {stderr_output}")
+                        except:
+                            pass
+                    return False
+                except Exception as e:
+                    print(f"ERROR: Worker {self.worker_id} unexpected error writing to stdin: {e}")
+                    return False
             else:
-                print(f"ERROR: Worker {self.worker_id} stdin is closed")
+                print(f"ERROR: Worker {self.worker_id} stdin is closed or None")
+                self._debug_print(f"Worker {self.worker_id} stdin state: {self.process.stdin}")
+                self._debug_print(f"Worker {self.worker_id} process poll: {self.process.poll()}")
+                return False
+            
+            # Wait for acknowledgment from worker that task was received
+            ack_received = False
+            ack_timeout = 5  # Wait up to 5 seconds for acknowledgment
+            start_time = time.time()
+            
+            while not ack_received and time.time() - start_time < ack_timeout:
+                if self.process.poll() is not None:
+                    # Process died
+                    return False
+                
+                # Try to read acknowledgment
+                import select
+                if hasattr(select, 'select'):
+                    ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
+                    if ready_to_read:
+                        try:
+                            line = self.process.stdout.readline().strip()
+                            if line == "TASK_RECEIVED":
+                                ack_received = True
+                                self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
+                            elif line:
+                                # Check if it's a task result with ID
+                                if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                    self.output_buffer.append(line)
+                                    self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
+                                elif "DEBUG:" not in line and line != "WORKER_READY":
+                                    # Log non-debug output for debugging
+                                    self._debug_print(f"Worker {self.worker_id} output: {line}")
+                        except:
+                            pass
+                else:
+                    time.sleep(0.1)
+            
+            if not ack_received:
+                print(f"ERROR: Worker {self.worker_id} did not acknowledge task {task.task_id}")
                 return False
             
             self.current_task = task
@@ -205,6 +302,10 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         if self.status != "busy" or self.process is None or self.current_task is None:
             return None
         
+        self._debug_print(f"Worker {self.worker_id} checking completion for task {self.current_task.task_id}, buffer size: {len(self.output_buffer)}")
+        if self.output_buffer:
+            self._debug_print(f"Worker {self.worker_id} buffer contents: {self.output_buffer}")
+        
         # Check if process has output available
         if self.process.poll() is not None:
             # Process has terminated - this shouldn't happen during normal task execution
@@ -215,14 +316,49 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Don't clear current_task yet - the caller needs it
             return False
         
-        # Check for task completion signal (worker should send result via stdout)
-        try:
-            # Try to use select for non-blocking read (Unix/Linux/macOS)
-            import select
-            if select.select([self.process.stdout], [], [], 0)[0]:
-                result_line = self.process.stdout.readline().strip()
-                if result_line:
-                    success = result_line == "SUCCESS"
+        # First check if there's a result file for the current task
+        task_id = self.current_task.task_id
+        result_file = os.path.join(self.current_task.task_folder, f"{task_id}_result.txt")
+        
+        if os.path.exists(result_file):
+            try:
+                with open(result_file, 'r') as f:
+                    result_content = f.read().strip()
+                
+                if ":" in result_content:
+                    result_task_id, result_type = result_content.split(":", 1)
+                    if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                        success = result_type == "TASK_SUCCESS_RESPONSE"
+                        self._debug_print(f"Worker {self.worker_id} found result file for {task_id}: {result_type}")
+                        
+                        # Remove the result file after reading
+                        try:
+                            os.remove(result_file)
+                        except:
+                            pass
+                        
+                        self.current_task.status = "completed" if success else "failed"
+                        self.current_task.end_time = time.time()
+                        
+                        if success:
+                            self.total_tasks_succeeded += 1
+                        else:
+                            self.total_tasks_failed += 1
+                        
+                        self.status = "idle"
+                        return success
+            except Exception as e:
+                self._debug_print(f"Worker {self.worker_id} error reading result file: {e}")
+        
+        # Then check buffered results (keep as fallback)
+        for i, line in enumerate(self.output_buffer):
+            if ":" in line:
+                result_task_id, result_type = line.split(":", 1)
+                if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                    # Found the result for current task
+                    self.output_buffer.pop(i)
+                    success = result_type == "TASK_SUCCESS_RESPONSE"
+                    self._debug_print(f"Worker {self.worker_id} found buffered result for {task_id}: {result_type}")
                     
                     self.current_task.status = "completed" if success else "failed"
                     self.current_task.end_time = time.time()
@@ -232,10 +368,66 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     else:
                         self.total_tasks_failed += 1
                     
-                    # Don't clear current_task here - let the main loop do it
                     self.status = "idle"
-                    
                     return success
+        
+        # Check for task completion signal (worker should send result via stdout)
+        try:
+            # Try to use select for non-blocking read (Unix/Linux/macOS)
+            import select
+            # Keep checking until we reach the task timeout
+            task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
+            remaining_timeout = (self.task_timeout - task_runtime) if self.task_timeout != -1 else 30
+            
+            # If we've already exceeded timeout, use 0 (non-blocking check)
+            if remaining_timeout <= 0:
+                check_timeout = 0
+            else:
+                # Use a short check interval but keep trying until timeout
+                check_timeout = min(0.5, remaining_timeout)
+            
+            if select.select([self.process.stdout], [], [], check_timeout)[0]:
+                # Read all available lines to avoid blocking
+                lines_read = []
+                try:
+                    while select.select([self.process.stdout], [], [], 0)[0]:
+                        line = self.process.stdout.readline().strip()
+                        if line:
+                            lines_read.append(line)
+                        else:
+                            break
+                except:
+                    pass
+                
+                # Process all the lines we read
+                for result_line in lines_read:
+                    if result_line:
+                        # Check if it's a task result
+                        if ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
+                            result_task_id, result_type = result_line.split(":", 1)
+                            if result_task_id == task_id:
+                                success = result_type == "TASK_SUCCESS_RESPONSE"
+                                self._debug_print(f"Worker {self.worker_id} found immediate result for {task_id}: {result_type}")
+                                
+                                self.current_task.status = "completed" if success else "failed"
+                                self.current_task.end_time = time.time()
+                                
+                                if success:
+                                    self.total_tasks_succeeded += 1
+                                else:
+                                    self.total_tasks_failed += 1
+                                
+                                # Don't clear current_task here - let the main loop do it
+                                self.status = "idle"
+                                
+                                return success
+                            else:
+                                # Result for a different task - buffer it
+                                self.output_buffer.append(result_line)
+                                self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
+                        elif "DEBUG:" not in result_line:
+                            # Non-debug output that's not a result
+                            self._debug_print(f"Worker {self.worker_id} output: {result_line}")
         except (ImportError, OSError) as e:
             # Windows fallback using threading with timeout
             try:
@@ -264,9 +456,11 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         return None
                 
                 # Try to read a line with a short timeout
-                result_line = read_line_with_timeout(self.process, 0.1)
-                if result_line and result_line in ["SUCCESS", "FAILURE"]:
-                    success = result_line == "SUCCESS"
+                # Use configured timeout (-1 means no timeout)
+                timeout = None if self.task_timeout == -1 else self.task_timeout
+                result_line = read_line_with_timeout(self.process, timeout)
+                if result_line and result_line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                    success = result_line == "TASK_SUCCESS_RESPONSE"
                     
                     self.current_task.status = "completed" if success else "failed"
                     self.current_task.end_time = time.time()
@@ -283,6 +477,42 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         
             except Exception as e:
                 pass
+        
+        # Check if we've exceeded the task timeout
+        task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
+        if self.task_timeout != -1 and task_runtime > self.task_timeout:
+            # Task timed out - do one final check for results with a short timeout
+            self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} checking for late results after {task_runtime:.1f}s")
+            
+            # One last attempt to read the result
+            import select
+            if select.select([self.process.stdout], [], [], 0.5)[0]:
+                result_line = self.process.stdout.readline().strip()
+                if result_line and ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
+                    result_task_id, result_type = result_line.split(":", 1)
+                    if result_task_id == self.current_task.task_id:
+                        # Found the result just after timeout!
+                        success = result_type == "TASK_SUCCESS_RESPONSE"
+                        self._debug_print(f"Worker {self.worker_id} found late result for {self.current_task.task_id}: {result_type}")
+                        
+                        self.current_task.status = "completed" if success else "failed"
+                        self.current_task.end_time = time.time()
+                        
+                        if success:
+                            self.total_tasks_succeeded += 1
+                        else:
+                            self.total_tasks_failed += 1
+                        
+                        self.status = "idle"
+                        return success
+            
+            # Really timed out
+            self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} timed out after {task_runtime:.1f}s")
+            self.current_task.status = "failed"
+            self.current_task.end_time = time.time()
+            self.total_tasks_failed += 1
+            self.status = "idle"
+            return False
         
         return None
     

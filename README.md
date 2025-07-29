@@ -19,6 +19,7 @@
 - [Configuration Options](#configuration-options)
 - [Variable Specifications](#variable-specifications)
 - [Implementation Details](#implementation-details)
+- [Troubleshooting](#troubleshooting)
 
 ## Installing `threadward`
 
@@ -50,14 +51,16 @@ This creates `threadward_run.py` in your current directory.
 Open `threadward_my_experiment.py` (or `threadward_run.py`) and implement your Runner class:
 
 ```python
+import argparse
 import threadward
 
 class My_experimentRunner(threadward.Threadward):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, debug=False, results_folder="threadward_results"):
+        super().__init__(debug=debug, results_folder=results_folder)
         self.set_constraints(
             NUM_WORKERS=1,
-            NUM_GPUS_PER_WORKER=0
+            NUM_GPUS_PER_WORKER=0,
+            TASK_TIMEOUT=30  # Timeout in seconds (-1 for no timeout)
         )
     
     def task_method(self, variables, task_folder, log_file):
@@ -78,8 +81,18 @@ class My_experimentRunner(threadward.Threadward):
             values=[16, 32, 64]
         )
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run threadward experiments')
+    parser.add_argument('--debug', action='store_true', 
+                       help='Enable debug output for troubleshooting')
+    parser.add_argument('--results-folder', default='threadward_results',
+                       help='Name of the results folder (default: threadward_results)')
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    runner = My_experimentRunner()
+    args = parse_args()
+    runner = My_experimentRunner(debug=args.debug, results_folder=args.results_folder)
     runner.run()
 ```
 
@@ -93,6 +106,25 @@ Or if you used the default name:
 ```bash
 python threadward_run.py
 ```
+
+#### CLI Options
+
+You can customize execution with command line arguments:
+
+```bash
+# Enable debug output for troubleshooting
+python threadward_my_experiment.py --debug
+
+# Use a custom results folder
+python threadward_my_experiment.py --results-folder my_custom_results
+
+# Combine options
+python threadward_my_experiment.py --debug --results-folder experiment_2024
+```
+
+**Available CLI Arguments:**
+- `--debug`: Enable detailed debug output to help troubleshoot worker communication issues
+- `--results-folder`: Specify the name of the results folder (default: "threadward_results")
 
 That's it! `threadward` will create task folders, manage workers, and execute your tasks across all variable combinations.
 
@@ -169,8 +201,8 @@ from local_package.models import MyModel
 from local_package.utils import process_data
 
 class Runner(threadward.Threadward):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, debug=False, results_folder="threadward_results"):
+        super().__init__(debug=debug, results_folder=results_folder)
         
     def task_method(self, variables, task_folder, log_file):
         model = MyModel(variables['model_type'])
@@ -183,8 +215,18 @@ class Runner(threadward.Threadward):
     def setup_variable_set(self, variable_set):
         pass
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run threadward experiments')
+    parser.add_argument('--debug', action='store_true', 
+                       help='Enable debug output for troubleshooting')
+    parser.add_argument('--results-folder', default='threadward_results',
+                       help='Name of the results folder (default: threadward_results)')
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    runner = Runner()
+    args = parse_args()
+    runner = Runner(debug=args.debug, results_folder=args.results_folder)
     runner.run()
 ```
 
@@ -231,6 +273,11 @@ Your configuration file supports the following options:
   - `"PRINT_FAILURE_AND_CONTINUE"` (default): Print failure and continue
   - `"SILENT_CONTINUE"`: Continue silently
   - `"STOP_EXECUTION"`: Stop on first failure
+
+### Execution Control
+- `TASK_TIMEOUT`: Timeout in seconds for task completion (default: 30)
+  - Set to `-1` for no timeout
+  - Tasks that exceed this timeout will be marked as failed
 
 ## Variable Specifications
 
@@ -297,7 +344,7 @@ After running your configuration file, `threadward` creates:
 ```
 YOUR_PROJECT/
 ├── threadward_my_experiment.py  # Your configuration file
-├── threadward_results/          # All results stored here
+├── threadward_results/          # All results stored here (configurable via --results-folder)
 │   ├── task_queue/              # Created during execution
 │   │   ├── all_tasks.json
 │   │   ├── successful_tasks.txt
@@ -310,10 +357,12 @@ YOUR_PROJECT/
 
 ### Worker Management
 
-- Workers are Python subprocesses that communicate via stdin/stdout
+- Workers are Python subprocesses that communicate via file-based IPC for reliability
 - Each worker can be assigned specific GPUs via `CUDA_VISIBLE_DEVICES`
 - Workers persist across multiple tasks to retain loaded models/data
+- Uses the same Python executable as the parent process (inherits conda/virtualenv environment)
 - Automatic cleanup and resource management
+- Robust error handling and process monitoring
 
 ### Task Scheduling
 
@@ -324,3 +373,37 @@ YOUR_PROJECT/
 5. Clean up resources when complete
 
 The system is designed to be robust, resumable (via `EXISTING_FOLDER_HANDLING = "SKIP"`), and efficient for iterative experimentation workflows.
+
+## Troubleshooting
+
+### Debug Mode
+
+If you encounter issues with worker processes or task execution, enable debug mode:
+
+```bash
+python threadward_my_experiment.py --debug
+```
+
+Debug mode provides detailed output including:
+- Worker initialization and startup messages
+- Task assignment and acknowledgment tracking
+- Inter-process communication details
+- Task completion status and timing
+- Error details and process state information
+
+### Common Issues
+
+**Workers fail to start:**
+- Check that your Python environment has all required dependencies
+- Verify GPU availability if using `NUM_GPUS_PER_WORKER > 0`
+- Enable debug mode to see detailed startup messages
+
+**Tasks marked as failed despite completing:**
+- Increase `TASK_TIMEOUT` if tasks need more time to complete
+- Check your `verify_task_success` implementation
+- Review task log files in the individual task folders
+
+**Environment issues:**
+- `threadward` uses the same Python executable as the parent process
+- This automatically inherits your current conda/virtualenv environment
+- Custom environment variables (like `CUDA_VISIBLE_DEVICES`) are properly set per worker

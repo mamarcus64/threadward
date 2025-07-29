@@ -1,8 +1,9 @@
 """Worker process logic for threadward."""
 
-import sys
+import sys 
 import os
 import json
+import time
 import traceback
 import importlib.util
 
@@ -29,6 +30,9 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     log_file = task_data["log_file"]
     nicknames = task_data.get("_nicknames", {})
     
+    print(f"DEBUG: execute_task called for task_folder: {task_folder}", flush=True)
+    print(f"DEBUG: execute_task log_file: {log_file}", flush=True)
+    
     # Convert variables using to_value functions if converter function provided
     if convert_variables_func:
         converted_variables = convert_variables_func(variables, nicknames)
@@ -36,7 +40,13 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
         converted_variables = variables
     
     # Create task folder
-    os.makedirs(task_folder, exist_ok=True)
+    print(f"DEBUG: Creating task folder: {task_folder}", flush=True)
+    try:
+        os.makedirs(task_folder, exist_ok=True)
+        print(f"DEBUG: Task folder created successfully", flush=True)
+    except Exception as e:
+        print(f"ERROR: Failed to create task folder {task_folder}: {e}", flush=True)
+        return False
     
     # Call before_each_task
     if hasattr(task_spec, 'before_each_task'):
@@ -94,10 +104,18 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
 
 def worker_main(worker_id, config_module, results_path):
     """Main worker process loop."""
+    print(f"DEBUG: Worker {worker_id} entering main loop", flush=True)
+    
     # Load all tasks and converter info
     all_tasks_path = os.path.join(results_path, "task_queue", "all_tasks.json")
-    with open(all_tasks_path, 'r') as f:
-        tasks_json = json.load(f)
+    print(f"DEBUG: Worker {worker_id} loading tasks from: {all_tasks_path}", flush=True)
+    try:
+        with open(all_tasks_path, 'r') as f:
+            tasks_json = json.load(f)
+        print(f"DEBUG: Worker {worker_id} loaded {len(tasks_json) if isinstance(tasks_json, list) else len(tasks_json.get('tasks', [])) if isinstance(tasks_json, dict) else 'unknown'} tasks", flush=True)
+    except Exception as e:
+        print(f"ERROR: Worker {worker_id} failed to load tasks: {e}", flush=True)
+        return
     
     # Handle both old and new format
     if isinstance(tasks_json, list):
@@ -139,24 +157,54 @@ def worker_main(worker_id, config_module, results_path):
     current_converted_hierarchical_values = {}
     
     # Call before_each_worker
+    print(f"DEBUG: Worker {worker_id} calling before_each_worker", flush=True)
+    sys.stdout.flush()
     if hasattr(config_module, 'before_each_worker'):
-        config_module.before_each_worker(worker_id)
+        try:
+            config_module.before_each_worker(worker_id)
+            print(f"DEBUG: Worker {worker_id} before_each_worker completed", flush=True)
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"ERROR: Worker {worker_id} before_each_worker failed: {e}", flush=True)
+            print(f"DEBUG: Worker {worker_id} before_each_worker traceback: {traceback.format_exc()}", flush=True)
+            sys.stdout.flush()
+            return
+    else:
+        print(f"DEBUG: Worker {worker_id} no before_each_worker method found", flush=True)
+        sys.stdout.flush()
     
     try:
         # Main worker loop
+        print(f"DEBUG: Worker {worker_id} starting main input loop", flush=True)
+        
+        # Signal that worker is ready to receive tasks
+        print("WORKER_READY", flush=True)
+        # Force flush stdout to ensure signal reaches parent immediately
+        sys.stdout.flush()
+        
+        # Small delay to ensure parent has time to process the signal
+        time.sleep(0.1)
+        
         while True:
             try:
                 # Wait for task assignment or shutdown signal
                 line = input().strip()
             except EOFError:
                 # Parent process closed stdin, worker should exit
-                print("INFO: Parent process closed stdin, worker exiting", flush=True)
+                print(f"INFO: Worker {worker_id} received EOFError - parent process closed stdin, worker exiting", flush=True)
+                print(f"DEBUG: Worker {worker_id} stdin state: closed={sys.stdin.closed if hasattr(sys.stdin, 'closed') else 'unknown'}", flush=True)
                 break
             
             if line == "SHUT_DOWN":
                 break
             
             # Find the task
+            print(f"DEBUG: Worker {worker_id} received task ID: '{line}'", flush=True)
+            
+            # Send acknowledgment that we received the task
+            print("TASK_RECEIVED", flush=True)
+            sys.stdout.flush()
+            
             task_data = None
             for task in all_tasks_data:
                 if task["task_id"] == line:
@@ -164,7 +212,9 @@ def worker_main(worker_id, config_module, results_path):
                     break
             
             if task_data is None:
-                print("FAILURE", flush=True)
+                print(f"ERROR: Worker {worker_id} could not find task '{line}' in all_tasks_data", flush=True)
+                print(f"DEBUG: Available task IDs: {[t.get('task_id', 'NO_ID') for t in all_tasks_data[:5]]}..." if all_tasks_data else "DEBUG: all_tasks_data is empty", flush=True)
+                print("TASK_FAILURE_RESPONSE", flush=True)
                 sys.stdout.flush()
                 continue
             
@@ -204,12 +254,37 @@ def worker_main(worker_id, config_module, results_path):
                         current_converted_hierarchical_values = converted_hierarchical_values
                 
                 # Execute the task
-                success = execute_task(config_module, task_data, convert_variables)
-                print("SUCCESS" if success else "FAILURE", flush=True)
+                print(f"DEBUG: Worker {worker_id} starting task execution for '{task_data['task_id']}'", flush=True)
                 sys.stdout.flush()
                 
+                # Save original stdout to ensure we can send results back
+                original_stdout = sys.stdout
+                
+                success = execute_task(config_module, task_data, convert_variables)
+                
+                # Restore stdout and send result to parent process
+                sys.stdout = original_stdout
+                print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
+                sys.stdout.flush()
+                
+                # Write result to a dedicated result file instead of stdout to avoid pipe issues
+                result_msg = f"{task_data['task_id']}:TASK_SUCCESS_RESPONSE" if success else f"{task_data['task_id']}:TASK_FAILURE_RESPONSE"
+                result_file = os.path.join(task_data['task_folder'], f"{task_data['task_id']}_result.txt")
+                try:
+                    with open(result_file, 'w') as f:
+                        f.write(result_msg)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    print(f"DEBUG: Worker {worker_id} wrote result to {result_file}", flush=True)
+                except Exception as e:
+                    print(f"ERROR: Worker {worker_id} failed to write result file: {e}", flush=True)
+                    # Fallback to stdout
+                    print(result_msg, flush=True)
+                
             except Exception as e:
-                print("FAILURE", flush=True)
+                print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)
+                print(f"DEBUG: Worker {worker_id} exception traceback: {traceback.format_exc()}", flush=True)
+                print("TASK_FAILURE_RESPONSE", flush=True)
                 sys.stdout.flush()
     
     finally:
@@ -224,12 +299,25 @@ def worker_main(worker_id, config_module, results_path):
 
 def worker_main_from_file(worker_id, config_file_path, results_path):
     """Main worker process loop that loads config from file."""
+    print(f"DEBUG: Worker {worker_id} starting initialization", flush=True)
+    print(f"DEBUG: Worker {worker_id} config_file_path: {config_file_path}", flush=True)
+    print(f"DEBUG: Worker {worker_id} results_path: {results_path}", flush=True)
+    
     # Load the configuration module
-    spec = importlib.util.spec_from_file_location("config", config_file_path)
-    config_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config_module)
+    try:
+        print(f"DEBUG: Worker {worker_id} loading config module", flush=True)
+        spec = importlib.util.spec_from_file_location("config", config_file_path)
+        config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_module)
+        print(f"DEBUG: Worker {worker_id} config module loaded successfully", flush=True)
+    except Exception as e:
+        print(f"ERROR: Worker {worker_id} failed to load config: {e}", flush=True)
+        print(f"DEBUG: Worker {worker_id} config load traceback: {traceback.format_exc()}", flush=True)
+        return
     
     # Check if this is a class-based runner
+    print(f"DEBUG: Worker {worker_id} checking for runner class", flush=True)
+    sys.stdout.flush()
     runner_instance = None
     for attr_name in dir(config_module):
         attr = getattr(config_module, attr_name)
@@ -237,7 +325,11 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
             attr.__module__ == config_module.__name__ and
             hasattr(attr, 'task_method')):
             # Found a runner class, instantiate it
+            print(f"DEBUG: Worker {worker_id} found runner class: {attr_name}", flush=True)
+            sys.stdout.flush()
             runner_instance = attr()
+            print(f"DEBUG: Worker {worker_id} instantiated runner class", flush=True)
+            sys.stdout.flush()
             break
     
     if runner_instance:
@@ -286,9 +378,14 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
                     return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
         config_module = ModuleWrapper(runner_instance)
+        print(f"DEBUG: Worker {worker_id} using ModuleWrapper for class-based runner", flush=True)
+    else:
+        print(f"DEBUG: Worker {worker_id} using config module directly", flush=True)
     
     # Run the main worker loop
+    print(f"DEBUG: Worker {worker_id} calling worker_main", flush=True)
     worker_main(worker_id, config_module, results_path)
+    print(f"DEBUG: Worker {worker_id} worker_main returned", flush=True)
 
 
 if __name__ == "__main__":

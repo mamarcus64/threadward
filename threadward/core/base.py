@@ -8,8 +8,15 @@ from .variable_set import VariableSet
 class Threadward(ABC):
     """Abstract base class for Threadward experiment runners."""
     
-    def __init__(self):
-        """Initialize the Threadward runner with default settings."""
+    def __init__(self, debug=False, results_folder="threadward_results"):
+        """Initialize the Threadward runner with default settings.
+        
+        Args:
+            debug: Enable debug output (default: False)
+            results_folder: Name of the results folder (default: "threadward_results")
+        """
+        self.debug = debug
+        self.results_folder = results_folder
         self._constraints = {
             "SUCCESS_CONDITION": "NO_ERROR_AND_VERIFY",
             "OUTPUT_MODE": "LOG_FILE_ONLY", 
@@ -21,7 +28,8 @@ class Threadward(ABC):
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
             "EXISTING_FOLDER_HANDLING": "SKIP",
             "ENABLE_HIERARCHICAL_RETENTION": True,
-            "HIERARCHY_DEPTH": None  # None means auto-detect (all vars except last)
+            "HIERARCHY_DEPTH": None,  # None means auto-detect (all vars except last)
+            "TASK_TIMEOUT": 30  # Timeout in seconds for task completion, -1 for no timeout
         }
     
     def set_constraints(self, **kwargs):
@@ -212,5 +220,5 @@ class Threadward(ABC):
         mock_config.__file__ = config_file_path
         
         # Create and run threadward instance
-        threadward_core = ThreadwardCore(config_dir, mock_config)
+        threadward_core = ThreadwardCore(config_dir, mock_config, debug=self.debug, results_folder=self.results_folder)
         threadward_core.run()

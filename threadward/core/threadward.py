@@ -20,19 +20,23 @@ except ImportError:
 class Threadward:
     """Main coordinator class for threadward execution."""
     
-    def __init__(self, project_path: str, config_module):
+    def __init__(self, project_path: str, config_module, debug: bool = False, results_folder: str = "threadward_results"):
         """Initialize Threadward coordinator.
         
         Args:
             project_path: Path to the project directory
             config_module: The loaded configuration module
+            debug: Enable debug output (default: False)
+            results_folder: Name of the results folder (default: "threadward_results")
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
         self.config_file_path = getattr(config_module, '__file__', None)
+        self.debug = debug
+        self.results_folder = results_folder
         
         # Create results directory structure
-        self.results_path = os.path.join(project_path, "threadward_results")
+        self.results_path = os.path.join(project_path, results_folder)
         self.task_queue_path = os.path.join(self.results_path, "task_queue")
         
         # Task management
@@ -280,7 +284,7 @@ class Threadward:
                 # Detect conda environment
                 conda_env = os.environ.get("CONDA_DEFAULT_ENV")
                 
-                worker = Worker(worker_id, worker_gpus, conda_env)
+                worker = Worker(worker_id, worker_gpus, conda_env, self.debug)
                 self.workers.append(worker)
             
             print(f"Created {len(self.workers)} workers")
@@ -299,7 +303,9 @@ class Threadward:
         try:
             success_count = 0
             for worker in self.workers:
-                if worker.start(self.config_file_path, self.results_path):
+                # Get task timeout from config module
+                task_timeout = getattr(self.config_module, 'TASK_TIMEOUT', 30)
+                if worker.start(self.config_file_path, self.results_path, task_timeout):
                     success_count += 1
                 else:
                     print(f"Failed to start worker {worker.worker_id}")
