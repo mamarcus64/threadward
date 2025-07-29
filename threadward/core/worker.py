@@ -7,6 +7,7 @@ import psutil
 import threading
 from typing import Optional, List, Dict, Any
 from .task import Task
+import shutil
 
 try:
     import GPUtil
@@ -48,6 +49,18 @@ class Worker:
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_monitoring = threading.Event()
     
+    @staticmethod
+    def _get_python_executable() -> str:
+        """Get the Python executable, preferring 'python' but falling back to 'python3'."""
+        if shutil.which("python") is not None:
+            return "python"
+        elif shutil.which("python3") is not None:
+            return "python3"
+        else:
+            # As a last resort, use sys.executable
+            import sys
+            return sys.executable
+    
     def start(self, worker_script_path: str) -> bool:
         """Start the worker subprocess.
         
@@ -70,15 +83,17 @@ class Worker:
                 env["CUDA_VISIBLE_DEVICES"] = ""
             
             # Prepare command
+            python_executable = self._get_python_executable()
+            
             if self.conda_env:
                 # Use conda environment
                 cmd = [
                     "conda", "run", "-n", self.conda_env,
-                    "python", worker_script_path, str(self.worker_id)
+                    python_executable, worker_script_path, str(self.worker_id)
                 ]
             else:
                 # Use current Python environment
-                cmd = ["python", worker_script_path, str(self.worker_id)]
+                cmd = [python_executable, worker_script_path, str(self.worker_id)]
             
             print(f"DEBUG: Worker {self.worker_id} command: {cmd}")
             
