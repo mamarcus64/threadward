@@ -171,6 +171,10 @@ def worker_main(worker_id, config_module, results_path):
     try:
         # Main worker loop
         print(f"DEBUG: Worker {worker_id} starting main input loop", flush=True)
+        
+        # Signal that worker is ready to receive tasks
+        print("WORKER_READY", flush=True)
+        
         while True:
             try:
                 # Wait for task assignment or shutdown signal
