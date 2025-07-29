@@ -29,6 +29,9 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     log_file = task_data["log_file"]
     nicknames = task_data.get("_nicknames", {})
     
+    print(f"DEBUG: execute_task called for task_folder: {task_folder}", flush=True)
+    print(f"DEBUG: execute_task log_file: {log_file}", flush=True)
+    
     # Convert variables using to_value functions if converter function provided
     if convert_variables_func:
         converted_variables = convert_variables_func(variables, nicknames)
@@ -36,7 +39,13 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
         converted_variables = variables
     
     # Create task folder
-    os.makedirs(task_folder, exist_ok=True)
+    print(f"DEBUG: Creating task folder: {task_folder}", flush=True)
+    try:
+        os.makedirs(task_folder, exist_ok=True)
+        print(f"DEBUG: Task folder created successfully", flush=True)
+    except Exception as e:
+        print(f"ERROR: Failed to create task folder {task_folder}: {e}", flush=True)
+        return False
     
     # Call before_each_task
     if hasattr(task_spec, 'before_each_task'):
@@ -158,6 +167,7 @@ def worker_main(worker_id, config_module, results_path):
                 break
             
             # Find the task
+            print(f"DEBUG: Worker {worker_id} received task ID: '{line}'", flush=True)
             task_data = None
             for task in all_tasks_data:
                 if task["task_id"] == line:
@@ -165,6 +175,8 @@ def worker_main(worker_id, config_module, results_path):
                     break
             
             if task_data is None:
+                print(f"ERROR: Worker {worker_id} could not find task '{line}' in all_tasks_data", flush=True)
+                print(f"DEBUG: Available task IDs: {[t.get('task_id', 'NO_ID') for t in all_tasks_data[:5]]}..." if all_tasks_data else "DEBUG: all_tasks_data is empty", flush=True)
                 print("FAILURE", flush=True)
                 sys.stdout.flush()
                 continue
@@ -205,11 +217,15 @@ def worker_main(worker_id, config_module, results_path):
                         current_converted_hierarchical_values = converted_hierarchical_values
                 
                 # Execute the task
+                print(f"DEBUG: Worker {worker_id} starting task execution for '{task_data['task_id']}'", flush=True)
                 success = execute_task(config_module, task_data, convert_variables)
+                print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
                 print("SUCCESS" if success else "FAILURE", flush=True)
                 sys.stdout.flush()
                 
             except Exception as e:
+                print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)
+                print(f"DEBUG: Worker {worker_id} exception traceback: {traceback.format_exc()}", flush=True)
                 print("FAILURE", flush=True)
                 sys.stdout.flush()
     
