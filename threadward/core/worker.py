@@ -5,6 +5,7 @@ import os
 import time
 import psutil
 import threading
+import pickle
 from typing import Optional, List, Dict, Any
 from .task import Task
 import shutil
@@ -61,17 +62,18 @@ class Worker:
             import sys
             return sys.executable
     
-    def start(self, worker_script_path: str) -> bool:
+    def start(self, config_module, results_path: str) -> bool:
         """Start the worker subprocess.
         
         Args:
-            worker_script_path: Path to the worker script to execute
+            config_module: The configuration module with task methods
+            results_path: Path to the results directory
             
         Returns:
             True if worker started successfully, False otherwise
         """
         try:
-            print(f"DEBUG: Starting worker {self.worker_id} with script: {worker_script_path}")
+            print(f"DEBUG: Starting worker {self.worker_id}")
             
             # Prepare environment variables
             env = os.environ.copy()
@@ -82,20 +84,35 @@ class Worker:
             else:
                 env["CUDA_VISIBLE_DEVICES"] = ""
             
-            # Prepare command
+            # Create worker entry script that imports and runs the worker process
+            worker_entry = f'''
+import sys
+import pickle
+from threadward.core.worker_process import worker_main
+
+# Load config module from pickle
+config_module = pickle.loads({repr(pickle.dumps(config_module))})
+worker_id = {self.worker_id}
+results_path = {repr(results_path)}
+
+# Run the worker
+worker_main(worker_id, config_module, results_path)
+'''
+            
+            # Prepare command to run the worker entry code
             python_executable = self._get_python_executable()
             
             if self.conda_env:
                 # Use conda environment
                 cmd = [
                     "conda", "run", "-n", self.conda_env,
-                    python_executable, worker_script_path, str(self.worker_id)
+                    python_executable, "-c", worker_entry
                 ]
             else:
                 # Use current Python environment
-                cmd = [python_executable, worker_script_path, str(self.worker_id)]
+                cmd = [python_executable, "-c", worker_entry]
             
-            print(f"DEBUG: Worker {self.worker_id} command: {cmd}")
+            print(f"DEBUG: Worker {self.worker_id} command: {cmd[:3]} + [worker_entry_code]")
             
             # Start the subprocess
             self.process = subprocess.Popen(

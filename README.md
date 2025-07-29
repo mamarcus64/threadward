@@ -255,7 +255,6 @@ YOUR_PROJECT/
 │       ├── GD/lr_001/16/seed_0/
 │       ├── GD/lr_001/16/seed_1/
 │       └── ...
-└── worker_script.py             # Temporary worker script
 ```
 
 ### Worker Management
