@@ -309,6 +309,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             return None
         
         self._debug_print(f"Worker {self.worker_id} checking completion for task {self.current_task.task_id}, buffer size: {len(self.output_buffer)}")
+        if self.output_buffer:
+            self._debug_print(f"Worker {self.worker_id} buffer contents: {self.output_buffer}")
         
         # Check if process has output available
         if self.process.poll() is not None:
@@ -438,7 +440,32 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         # Check if we've exceeded the task timeout
         task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
         if self.task_timeout != -1 and task_runtime > self.task_timeout:
-            # Task timed out
+            # Task timed out - do one final check for results with a short timeout
+            self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} checking for late results after {task_runtime:.1f}s")
+            
+            # One last attempt to read the result
+            import select
+            if select.select([self.process.stdout], [], [], 0.5)[0]:
+                result_line = self.process.stdout.readline().strip()
+                if result_line and ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
+                    result_task_id, result_type = result_line.split(":", 1)
+                    if result_task_id == self.current_task.task_id:
+                        # Found the result just after timeout!
+                        success = result_type == "TASK_SUCCESS_RESPONSE"
+                        self._debug_print(f"Worker {self.worker_id} found late result for {self.current_task.task_id}: {result_type}")
+                        
+                        self.current_task.status = "completed" if success else "failed"
+                        self.current_task.end_time = time.time()
+                        
+                        if success:
+                            self.total_tasks_succeeded += 1
+                        else:
+                            self.total_tasks_failed += 1
+                        
+                        self.status = "idle"
+                        return success
+            
+            # Really timed out
             self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} timed out after {task_runtime:.1f}s")
             self.current_task.status = "failed"
             self.current_task.end_time = time.time()
