@@ -20,16 +20,18 @@ except ImportError:
 class Threadward:
     """Main coordinator class for threadward execution."""
     
-    def __init__(self, project_path: str, config_module):
+    def __init__(self, project_path: str, config_module, debug: bool = False):
         """Initialize Threadward coordinator.
         
         Args:
             project_path: Path to the project directory
             config_module: The loaded configuration module
+            debug: Enable debug output (default: False)
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
         self.config_file_path = getattr(config_module, '__file__', None)
+        self.debug = debug
         
         # Create results directory structure
         self.results_path = os.path.join(project_path, "threadward_results")
@@ -280,7 +282,7 @@ class Threadward:
                 # Detect conda environment
                 conda_env = os.environ.get("CONDA_DEFAULT_ENV")
                 
-                worker = Worker(worker_id, worker_gpus, conda_env)
+                worker = Worker(worker_id, worker_gpus, conda_env, self.debug)
                 self.workers.append(worker)
             
             print(f"Created {len(self.workers)} workers")
