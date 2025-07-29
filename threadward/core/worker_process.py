@@ -157,16 +157,20 @@ def worker_main(worker_id, config_module, results_path):
     
     # Call before_each_worker
     print(f"DEBUG: Worker {worker_id} calling before_each_worker", flush=True)
+    sys.stdout.flush()
     if hasattr(config_module, 'before_each_worker'):
         try:
             config_module.before_each_worker(worker_id)
             print(f"DEBUG: Worker {worker_id} before_each_worker completed", flush=True)
+            sys.stdout.flush()
         except Exception as e:
             print(f"ERROR: Worker {worker_id} before_each_worker failed: {e}", flush=True)
             print(f"DEBUG: Worker {worker_id} before_each_worker traceback: {traceback.format_exc()}", flush=True)
+            sys.stdout.flush()
             return
     else:
         print(f"DEBUG: Worker {worker_id} no before_each_worker method found", flush=True)
+        sys.stdout.flush()
     
     try:
         # Main worker loop
@@ -287,6 +291,8 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
         return
     
     # Check if this is a class-based runner
+    print(f"DEBUG: Worker {worker_id} checking for runner class", flush=True)
+    sys.stdout.flush()
     runner_instance = None
     for attr_name in dir(config_module):
         attr = getattr(config_module, attr_name)
@@ -294,7 +300,11 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
             attr.__module__ == config_module.__name__ and
             hasattr(attr, 'task_method')):
             # Found a runner class, instantiate it
+            print(f"DEBUG: Worker {worker_id} found runner class: {attr_name}", flush=True)
+            sys.stdout.flush()
             runner_instance = attr()
+            print(f"DEBUG: Worker {worker_id} instantiated runner class", flush=True)
+            sys.stdout.flush()
             break
     
     if runner_instance:
