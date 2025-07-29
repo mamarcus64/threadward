@@ -103,10 +103,18 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
 
 def worker_main(worker_id, config_module, results_path):
     """Main worker process loop."""
+    print(f"DEBUG: Worker {worker_id} entering main loop", flush=True)
+    
     # Load all tasks and converter info
     all_tasks_path = os.path.join(results_path, "task_queue", "all_tasks.json")
-    with open(all_tasks_path, 'r') as f:
-        tasks_json = json.load(f)
+    print(f"DEBUG: Worker {worker_id} loading tasks from: {all_tasks_path}", flush=True)
+    try:
+        with open(all_tasks_path, 'r') as f:
+            tasks_json = json.load(f)
+        print(f"DEBUG: Worker {worker_id} loaded {len(tasks_json) if isinstance(tasks_json, list) else len(tasks_json.get('tasks', [])) if isinstance(tasks_json, dict) else 'unknown'} tasks", flush=True)
+    except Exception as e:
+        print(f"ERROR: Worker {worker_id} failed to load tasks: {e}", flush=True)
+        return
     
     # Handle both old and new format
     if isinstance(tasks_json, list):
@@ -148,11 +156,21 @@ def worker_main(worker_id, config_module, results_path):
     current_converted_hierarchical_values = {}
     
     # Call before_each_worker
+    print(f"DEBUG: Worker {worker_id} calling before_each_worker", flush=True)
     if hasattr(config_module, 'before_each_worker'):
-        config_module.before_each_worker(worker_id)
+        try:
+            config_module.before_each_worker(worker_id)
+            print(f"DEBUG: Worker {worker_id} before_each_worker completed", flush=True)
+        except Exception as e:
+            print(f"ERROR: Worker {worker_id} before_each_worker failed: {e}", flush=True)
+            print(f"DEBUG: Worker {worker_id} before_each_worker traceback: {traceback.format_exc()}", flush=True)
+            return
+    else:
+        print(f"DEBUG: Worker {worker_id} no before_each_worker method found", flush=True)
     
     try:
         # Main worker loop
+        print(f"DEBUG: Worker {worker_id} starting main input loop", flush=True)
         while True:
             try:
                 # Wait for task assignment or shutdown signal
@@ -241,10 +259,21 @@ def worker_main(worker_id, config_module, results_path):
 
 def worker_main_from_file(worker_id, config_file_path, results_path):
     """Main worker process loop that loads config from file."""
+    print(f"DEBUG: Worker {worker_id} starting initialization", flush=True)
+    print(f"DEBUG: Worker {worker_id} config_file_path: {config_file_path}", flush=True)
+    print(f"DEBUG: Worker {worker_id} results_path: {results_path}", flush=True)
+    
     # Load the configuration module
-    spec = importlib.util.spec_from_file_location("config", config_file_path)
-    config_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config_module)
+    try:
+        print(f"DEBUG: Worker {worker_id} loading config module", flush=True)
+        spec = importlib.util.spec_from_file_location("config", config_file_path)
+        config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_module)
+        print(f"DEBUG: Worker {worker_id} config module loaded successfully", flush=True)
+    except Exception as e:
+        print(f"ERROR: Worker {worker_id} failed to load config: {e}", flush=True)
+        print(f"DEBUG: Worker {worker_id} config load traceback: {traceback.format_exc()}", flush=True)
+        return
     
     # Check if this is a class-based runner
     runner_instance = None
@@ -303,9 +332,14 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
                     return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
         config_module = ModuleWrapper(runner_instance)
+        print(f"DEBUG: Worker {worker_id} using ModuleWrapper for class-based runner", flush=True)
+    else:
+        print(f"DEBUG: Worker {worker_id} using config module directly", flush=True)
     
     # Run the main worker loop
+    print(f"DEBUG: Worker {worker_id} calling worker_main", flush=True)
     worker_main(worker_id, config_module, results_path)
+    print(f"DEBUG: Worker {worker_id} worker_main returned", flush=True)
 
 
 if __name__ == "__main__":
