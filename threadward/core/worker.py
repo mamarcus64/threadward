@@ -40,6 +40,7 @@ class Worker:
         self.total_tasks_succeeded = 0
         self.total_tasks_failed = 0
         self.output_buffer = []  # Buffer for output lines read while waiting for acknowledgment
+        self.pending_result = None  # Result from a previous task that arrived late
         
         # Hierarchical state tracking
         self.current_hierarchical_key: str = ""
@@ -341,8 +342,14 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            # Use a reasonable timeout for checking results
-            check_timeout = min(1.0, self.task_timeout if self.task_timeout != -1 else 1.0)
+            # For the first check, wait longer to allow task to complete
+            # Check how long the task has been running
+            task_runtime = time.time() - self.current_task.start_time if self.current_task.start_time else 0
+            if task_runtime < 2.0:  # If task just started, wait a bit longer
+                check_timeout = min(2.0, self.task_timeout if self.task_timeout != -1 else 2.0)
+            else:
+                check_timeout = min(0.1, self.task_timeout if self.task_timeout != -1 else 0.1)
+            
             if select.select([self.process.stdout], [], [], check_timeout)[0]:
                 result_line = self.process.stdout.readline().strip()
                 if result_line:
