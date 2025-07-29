@@ -15,7 +15,8 @@ class VariableSet:
     def add_variable(self, name: str, values: List[Union[str, int, float]], 
                      nicknames: Optional[List[str]] = None,
                      interaction: str = "cartesian",
-                     exceptions: Optional[Dict[str, List[str]]] = None) -> None:
+                     exceptions: Optional[Dict[str, List[str]]] = None,
+                     to_value: Optional[Callable[[str, str], Any]] = None) -> None:
         """Add a variable to the set.
         
         Args:
@@ -24,6 +25,7 @@ class VariableSet:
             nicknames: Optional list of nicknames for values (for folder naming)
             interaction: How this variable interacts with previous ones ('cartesian')
             exceptions: Dict mapping parent values to restricted child values
+            to_value: Optional function to convert string value to object (takes string_value, nickname)
         """
         # Convert all values to strings
         str_values = [str(v) for v in values]
@@ -43,10 +45,15 @@ class VariableSet:
             "values": str_values,
             "nicknames": nicknames,
             "interaction": interaction,
-            "exceptions": exceptions or {}
+            "exceptions": exceptions or {},
+            "to_value": to_value
         }
         
         self.variables.append(variable_def)
+        
+        # Store converter if provided (for backward compatibility and new to_value parameter)
+        if to_value:
+            self.variable_converters[name] = to_value
     
     def add_converter(self, variable_name: str, converter: Callable[[str, str], Any]) -> None:
         """Add a converter function for a variable.
@@ -132,23 +139,23 @@ class VariableSet:
         return all_values
     
     def _convert_combination(self, combo: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
-        """Convert a combination to final format with converted values."""
+        """Convert a combination to final format (keeping string values for main process)."""
         result = {}
         
         for var_name, var_data in combo.items():
             string_value = var_data["value"]
-            nickname = var_data["nickname"]
-            
-            # Apply converter if available
-            if var_name in self.variable_converters:
-                converted_value = self.variable_converters[var_name](string_value, nickname)
-                result[var_name] = converted_value
-            else:
-                result[var_name] = string_value
+            # Always use string value in main process - conversion happens in workers
+            result[var_name] = string_value
         
         # Add metadata
         result["_task_folder"] = self._generate_task_folder(combo, base_path=getattr(self, '_base_path', None))
         result["_nicknames"] = {var: data["nickname"] for var, data in combo.items()}
+        
+        # Store which variables have to_value functions (for worker conversion)
+        result["_has_converters"] = {
+            var["name"]: var.get("to_value") is not None 
+            for var in self.variables
+        }
         
         return result
     
@@ -192,3 +199,51 @@ class VariableSet:
     def get_total_combinations(self) -> int:
         """Calculate total number of combinations."""
         return len(self.generate_combinations())
+    
+    def get_hierarchy_info(self, hierarchy_depth: Optional[int] = None) -> Dict[str, Any]:
+        """Get information about the variable hierarchy.
+        
+        Args:
+            hierarchy_depth: Number of top-level variables to consider for retention.
+                           If None, uses all variables except the last one.
+        
+        Returns:
+            Dict with hierarchy information including depth and variable names
+        """
+        if hierarchy_depth is None:
+            hierarchy_depth = max(len(self.variables) - 1, 0)
+        else:
+            hierarchy_depth = min(hierarchy_depth, len(self.variables))
+        
+        hierarchical_vars = [var["name"] for var in self.variables[:hierarchy_depth]]
+        
+        return {
+            "depth": hierarchy_depth,
+            "hierarchical_variables": hierarchical_vars,
+            "all_variables": self.get_variable_hierarchy()
+        }
+    
+    def get_converter_info(self) -> Dict[str, str]:
+        """Get information about which variables have converters.
+        
+        Returns:
+            Dict mapping variable names to converter function names
+        """
+        converter_info = {}
+        for var in self.variables:
+            if var.get("to_value") is not None:
+                # Store the variable name that has a converter
+                # The to_value function should be defined in the config module as {var_name}_to_value
+                converter_info[var["name"]] = var["name"] + "_to_value"
+        return converter_info
+    
+    def export_converters(self, module):
+        """Export to_value functions to a module so workers can access them.
+        
+        Args:
+            module: The config module to add converter functions to
+        """
+        for var in self.variables:
+            if var.get("to_value") is not None:
+                # Set the converter function as an attribute on the module
+                setattr(module, var["name"] + "_to_value", var["to_value"])

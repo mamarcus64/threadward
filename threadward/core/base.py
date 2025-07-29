@@ -19,7 +19,9 @@ class Threadward(ABC):
             "INCLUDE_GPUS": None,
             "FAILURE_HANDLING": "PRINT_FAILURE_AND_CONTINUE",
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
-            "EXISTING_FOLDER_HANDLING": "SKIP"
+            "EXISTING_FOLDER_HANDLING": "SKIP",
+            "ENABLE_HIERARCHICAL_RETENTION": True,
+            "HIERARCHY_DEPTH": None  # None means auto-detect (all vars except last)
         }
     
     def set_constraints(self, **kwargs):
@@ -35,6 +37,8 @@ class Threadward(ABC):
             FAILURE_HANDLING: How to handle task failures
             TASK_FOLDER_LOCATION: How to organize task folders
             EXISTING_FOLDER_HANDLING: What to do with existing task folders
+            ENABLE_HIERARCHICAL_RETENTION: Enable hierarchical variable retention (default: True)
+            HIERARCHY_DEPTH: Number of top-level variables to retain (default: None = auto)
         """
         self._constraints.update(kwargs)
     
@@ -117,6 +121,31 @@ class Threadward(ABC):
         """
         pass
     
+    # Hierarchical resource management hooks (optional)
+    def on_hierarchical_load(self, hierarchical_values, worker_id):
+        """Called when a worker loads new hierarchical values.
+        
+        This is useful for loading expensive resources (models, datasets) that
+        should be retained across multiple tasks with the same hierarchical values.
+        
+        Args:
+            hierarchical_values: Dictionary of hierarchical variable values being loaded
+            worker_id: ID of the worker loading these values
+        """
+        pass
+    
+    def on_hierarchical_unload(self, hierarchical_values, worker_id):
+        """Called when a worker unloads hierarchical values.
+        
+        This is useful for cleaning up resources when switching to different
+        hierarchical values.
+        
+        Args:
+            hierarchical_values: Dictionary of hierarchical variable values being unloaded
+            worker_id: ID of the worker unloading these values
+        """
+        pass
+    
     def run(self):
         """Execute the threadward experiment."""
         import os
@@ -142,6 +171,8 @@ class Threadward(ABC):
                 # Copy constraints as module attributes
                 for key, value in runner_instance._constraints.items():
                     setattr(self, key, value)
+                # Store reference to file path
+                self.__file__ = config_file_path
             
             def task_method(self, variables, task_folder, log_file):
                 return self.runner.task_method(variables, task_folder, log_file)
@@ -169,6 +200,12 @@ class Threadward(ABC):
             
             def after_each_task(self, variables, task_folder, log_file):
                 return self.runner.after_each_task(variables, task_folder, log_file)
+            
+            def on_hierarchical_load(self, hierarchical_values, worker_id):
+                return self.runner.on_hierarchical_load(hierarchical_values, worker_id)
+            
+            def on_hierarchical_unload(self, hierarchical_values, worker_id):
+                return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
         mock_config = MockConfig(self)
         

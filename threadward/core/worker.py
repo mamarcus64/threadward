@@ -36,6 +36,11 @@ class Worker:
         self.total_tasks_completed = 0
         self.total_tasks_failed = 0
         
+        # Hierarchical state tracking
+        self.current_hierarchical_key: str = ""
+        self.current_hierarchical_values: Dict[str, Any] = {}
+        self.hierarchical_load_count: int = 0
+        
         # Resource monitoring
         self.max_cpu_percent = 0.0
         self.current_cpu_percent = 0.0
@@ -142,6 +147,11 @@ class Worker:
             return False
         
         try:
+            # Update hierarchical state if needed
+            state_changed = self.update_hierarchical_state(task)
+            if state_changed:
+                print(f"DEBUG: Worker {self.worker_id} hierarchical state changed to: {task.hierarchical_key}")
+            
             print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
             # Send task ID to worker via stdin
@@ -376,3 +386,33 @@ class Worker:
     def __repr__(self) -> str:
         """Detailed string representation of the worker."""
         return f"Worker(id={self.worker_id}, status={self.status}, gpus={self.gpu_ids})"
+    
+    def is_hierarchically_compatible(self, task: Task) -> bool:
+        """Check if a task is compatible with the worker's current hierarchical state.
+        
+        Args:
+            task: Task to check compatibility for
+            
+        Returns:
+            True if the task matches the worker's hierarchical state or if no hierarchy is defined
+        """
+        if not task.hierarchical_key:
+            return True  # No hierarchy defined, all tasks are compatible
+        
+        return task.hierarchical_key == self.current_hierarchical_key
+    
+    def update_hierarchical_state(self, task: Task) -> bool:
+        """Update the worker's hierarchical state based on a task.
+        
+        Args:
+            task: Task to update state from
+            
+        Returns:
+            True if hierarchical state changed, False otherwise
+        """
+        if task.hierarchical_key != self.current_hierarchical_key:
+            self.current_hierarchical_key = task.hierarchical_key
+            self.current_hierarchical_values = task.get_hierarchical_values()
+            self.hierarchical_load_count += 1
+            return True
+        return False

@@ -63,7 +63,9 @@ class Threadward:
             "OUTPUT_MODE": "LOG_FILE_ONLY",
             "FAILURE_HANDLING": "PRINT_FAILURE_AND_CONTINUE",
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
-            "EXISTING_FOLDER_HANDLING": "SKIP"
+            "EXISTING_FOLDER_HANDLING": "SKIP",
+            "ENABLE_HIERARCHICAL_RETENTION": True,
+            "HIERARCHY_DEPTH": None
         }
         
         # Update with values from config module
@@ -140,6 +142,17 @@ class Threadward:
             
             self.config_module.setup_variable_set(variable_set)
             
+            # Export converter functions to config module so workers can access them
+            variable_set.export_converters(self.config_module)
+            
+            # Get hierarchy information
+            hierarchy_depth = self.config.get("HIERARCHY_DEPTH", None)
+            enable_hierarchy = self.config.get("ENABLE_HIERARCHICAL_RETENTION", True)
+            hierarchy_info = variable_set.get_hierarchy_info(hierarchy_depth) if enable_hierarchy else {}
+            
+            # Get converter information
+            converter_info = variable_set.get_converter_info()
+            
             # Generate all combinations
             combinations = variable_set.generate_combinations()
             
@@ -158,7 +171,8 @@ class Threadward:
                     task_id=task_id,
                     variables=combo,
                     task_folder=task_folder,
-                    log_file=log_file
+                    log_file=log_file,
+                    hierarchy_info=hierarchy_info
                 )
                 
                 self.tasks.append(task)
@@ -184,10 +198,14 @@ class Threadward:
             if not self._handle_existing_folders():
                 return False
             
-            # Save tasks to JSON file
+            # Save tasks to JSON file with converter info
             all_tasks_path = os.path.join(self.task_queue_path, "all_tasks.json")
+            tasks_data = {
+                "tasks": [task.to_dict() for task in self.tasks],
+                "converter_info": converter_info
+            }
             with open(all_tasks_path, 'w') as f:
-                json.dump([task.to_dict() for task in self.tasks], f, indent=2)
+                json.dump(tasks_data, f, indent=2)
             
             print(f"Generated {len(self.tasks)} tasks")
             return True
@@ -301,14 +319,53 @@ def main():
     task_spec = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(task_spec)
     
-    # Load all tasks
+    # Load all tasks and converter info
     all_tasks_path = os.path.join(os.getcwd(), "threadward_results", "task_queue", "all_tasks.json")
     with open(all_tasks_path, 'r') as f:
-        all_tasks_data = json.load(f)
+        tasks_json = json.load(f)
+    
+    # Handle both old and new format
+    if isinstance(tasks_json, list):
+        # Old format - just a list of tasks
+        all_tasks_data = tasks_json
+        converter_info = {}
+    else:
+        # New format with converter info
+        all_tasks_data = tasks_json.get("tasks", [])
+        converter_info = tasks_json.get("converter_info", {})
     
     # Call before_each_worker
     if hasattr(task_spec, 'before_each_worker'):
         task_spec.before_each_worker(worker_id)
+    
+    # Function to convert variables using to_value functions
+    def convert_variables(variables, nicknames=None):
+        """Convert string variables to objects using to_value functions."""
+        converted = {}
+        for var_name, string_value in variables.items():
+            if var_name in converter_info:
+                # This variable has a converter
+                converter_func_name = converter_info[var_name]
+                if hasattr(task_spec, converter_func_name):
+                    converter_func = getattr(task_spec, converter_func_name)
+                    nickname = nicknames.get(var_name, string_value) if nicknames else string_value
+                    try:
+                        converted[var_name] = converter_func(string_value, nickname)
+                    except Exception as e:
+                        print(f"Warning: Failed to convert {var_name}: {e}", flush=True)
+                        converted[var_name] = string_value
+                else:
+                    # No converter function found, use string value
+                    converted[var_name] = string_value
+            else:
+                # No converter needed, use string value
+                converted[var_name] = string_value
+        return converted
+    
+    # Track hierarchical state
+    current_hierarchical_key = ""
+    current_hierarchical_values = {}
+    current_converted_hierarchical_values = {}
     
     try:
         # Main worker loop
@@ -332,8 +389,42 @@ def main():
                 continue
             
             try:
+                # Check for hierarchical state change
+                hierarchy_info = task_data.get("hierarchy_info", {})
+                if hierarchy_info:
+                    hierarchical_vars = hierarchy_info.get("hierarchical_variables", [])
+                    task_hierarchical_values = {var: task_data["variables"][var] 
+                                               for var in hierarchical_vars 
+                                               if var in task_data["variables"]}
+                    
+                    # Compute hierarchical key for this task
+                    task_hierarchical_key = "|".join(
+                        f"{var}={str(task_hierarchical_values[var])}" 
+                        for var in hierarchical_vars if var in task_hierarchical_values
+                    )
+                    
+                    # Check if we need to load new hierarchical values
+                    if task_hierarchical_key != current_hierarchical_key:
+                        # Unload previous values if any
+                        if current_hierarchical_key and hasattr(task_spec, 'on_hierarchical_unload'):
+                            # Pass converted values to unload
+                            task_spec.on_hierarchical_unload(current_converted_hierarchical_values, worker_id)
+                        
+                        # Convert hierarchical values for loading
+                        task_nicknames = task_data.get("_nicknames", {})
+                        converted_hierarchical_values = convert_variables(task_hierarchical_values, task_nicknames)
+                        
+                        # Load new values
+                        if hasattr(task_spec, 'on_hierarchical_load'):
+                            # Pass converted values to load
+                            task_spec.on_hierarchical_load(converted_hierarchical_values, worker_id)
+                        
+                        current_hierarchical_key = task_hierarchical_key
+                        current_hierarchical_values = task_hierarchical_values
+                        current_converted_hierarchical_values = converted_hierarchical_values
+                
                 # Execute the task
-                success = execute_task(task_spec, task_data)
+                success = execute_task(task_spec, task_data, convert_variables, converter_info)
                 print("SUCCESS" if success else "FAILURE", flush=True)
                 sys.stdout.flush()
                 
@@ -342,22 +433,30 @@ def main():
                 sys.stdout.flush()
     
     finally:
+        # Unload any remaining hierarchical values
+        if current_hierarchical_key and hasattr(task_spec, 'on_hierarchical_unload'):
+            task_spec.on_hierarchical_unload(current_converted_hierarchical_values, worker_id)
+        
         # Call after_each_worker
         if hasattr(task_spec, 'after_each_worker'):
             task_spec.after_each_worker(worker_id)
 
-def execute_task(task_spec, task_data):
+def execute_task(task_spec, task_data, convert_variables_func, converter_info):
     """Execute a single task."""
     variables = task_data["variables"]
     task_folder = task_data["task_folder"]
     log_file = task_data["log_file"]
+    nicknames = task_data.get("_nicknames", {})
+    
+    # Convert variables using to_value functions
+    converted_variables = convert_variables_func(variables, nicknames)
     
     # Create task folder
     os.makedirs(task_folder, exist_ok=True)
     
-    # Call before_each_task
+    # Call before_each_task with converted variables
     if hasattr(task_spec, 'before_each_task'):
-        task_spec.before_each_task(variables, task_folder, log_file)
+        task_spec.before_each_task(converted_variables, task_folder, log_file)
     
     success = False
     try:
@@ -375,22 +474,22 @@ def execute_task(task_spec, task_data):
                     sys.stdout = TeeOutput(old_stdout, log)
                     sys.stderr = TeeOutput(old_stderr, log)
                 
-                # Call the main task method
-                task_spec.task_method(variables, task_folder, log_file)
+                # Call the main task method with converted variables
+                task_spec.task_method(converted_variables, task_folder, log_file)
                 success = True
                 
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
         
-        # Check success condition
+        # Check success condition with converted variables
         if hasattr(task_spec, 'SUCCESS_CONDITION'):
             if task_spec.SUCCESS_CONDITION == "NO_ERROR_AND_VERIFY":
                 if success and hasattr(task_spec, 'verify_task_success'):
-                    success = task_spec.verify_task_success(variables, task_folder, log_file)
+                    success = task_spec.verify_task_success(converted_variables, task_folder, log_file)
             elif task_spec.SUCCESS_CONDITION == "VERIFY_ONLY":
                 if hasattr(task_spec, 'verify_task_success'):
-                    success = task_spec.verify_task_success(variables, task_folder, log_file)
+                    success = task_spec.verify_task_success(converted_variables, task_folder, log_file)
             elif task_spec.SUCCESS_CONDITION == "ALWAYS_SUCCESS":
                 success = True
             # NO_ERROR_ONLY uses the existing success value
@@ -401,9 +500,9 @@ def execute_task(task_spec, task_data):
             log.write("\\nError: " + str(e) + "\\n")
     
     finally:
-        # Call after_each_task
+        # Call after_each_task with converted variables
         if hasattr(task_spec, 'after_each_task'):
-            task_spec.after_each_task(variables, task_folder, log_file)
+            task_spec.after_each_task(converted_variables, task_folder, log_file)
     
     return success
 
@@ -458,8 +557,15 @@ if __name__ == "__main__":
         self._call_hook("before_all_tasks")
         
         # Fill task queue
-        for task in self.tasks:
-            self.task_queue.put(task)
+        if self.config.get("ENABLE_HIERARCHICAL_RETENTION", True):
+            # Sort tasks by hierarchical key to group related tasks together
+            sorted_tasks = sorted(self.tasks, key=lambda t: (t.hierarchical_key, t.task_id))
+            for task in sorted_tasks:
+                self.task_queue.put(task)
+        else:
+            # Simple order if hierarchy is disabled
+            for task in self.tasks:
+                self.task_queue.put(task)
         
         self.is_running = True
         self.start_time = time.time()
@@ -532,11 +638,43 @@ if __name__ == "__main__":
         if self.task_queue.empty():
             return None
         
-        # For now, just get the next task in queue
-        # TODO: Implement hierarchical variable retention logic
+        # Check if hierarchical retention is enabled
+        if not self.config.get("ENABLE_HIERARCHICAL_RETENTION", True):
+            # Simple FIFO if hierarchy is disabled
+            try:
+                return self.task_queue.get_nowait()
+            except Empty:
+                return None
+        
+        # Try to find a task matching the worker's current hierarchical state
+        temp_tasks = []
+        best_task = None
+        
         try:
-            return self.task_queue.get_nowait()
+            # Extract all tasks from queue to examine them
+            while not self.task_queue.empty():
+                task = self.task_queue.get_nowait()
+                
+                # Check if this task matches worker's hierarchical state
+                if best_task is None and worker.is_hierarchically_compatible(task):
+                    best_task = task
+                else:
+                    temp_tasks.append(task)
+            
+            # If no matching task found, take the first one
+            if best_task is None and temp_tasks:
+                best_task = temp_tasks.pop(0)
+            
+            # Put remaining tasks back in queue
+            for task in temp_tasks:
+                self.task_queue.put(task)
+            
+            return best_task
+            
         except Empty:
+            # Put any examined tasks back
+            for task in temp_tasks:
+                self.task_queue.put(task)
             return None
     
     def _log_task_result(self, task: Task, success: bool) -> None:
