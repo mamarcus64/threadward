@@ -5,8 +5,10 @@ import os
 import time
 import psutil
 import threading
+import pickle
 from typing import Optional, List, Dict, Any
 from .task import Task
+import shutil
 
 try:
     import GPUtil
@@ -33,7 +35,7 @@ class Worker:
         self.current_task: Optional[Task] = None
         self.status = "idle"  # idle, busy, shutting_down, stopped
         self.start_time: Optional[float] = None
-        self.total_tasks_completed = 0
+        self.total_tasks_succeeded = 0
         self.total_tasks_failed = 0
         
         # Hierarchical state tracking
@@ -53,18 +55,29 @@ class Worker:
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_monitoring = threading.Event()
     
-    def start(self, worker_script_path: str) -> bool:
+    @staticmethod
+    def _get_python_executable() -> str:
+        """Get the Python executable, preferring 'python' but falling back to 'python3'."""
+        if shutil.which("python") is not None:
+            return "python"
+        elif shutil.which("python3") is not None:
+            return "python3"
+        else:
+            # As a last resort, use sys.executable
+            import sys
+            return sys.executable
+    
+    def start(self, config_file_path: str, results_path: str) -> bool:
         """Start the worker subprocess.
         
         Args:
-            worker_script_path: Path to the worker script to execute
+            config_file_path: Path to the configuration file
+            results_path: Path to the results directory
             
         Returns:
             True if worker started successfully, False otherwise
         """
         try:
-            print(f"DEBUG: Starting worker {self.worker_id} with script: {worker_script_path}")
-            
             # Prepare environment variables
             env = os.environ.copy()
             
@@ -74,18 +87,32 @@ class Worker:
             else:
                 env["CUDA_VISIBLE_DEVICES"] = ""
             
-            # Prepare command
+            # Create worker entry script that imports and runs the worker process
+            worker_entry = f'''
+import sys
+from threadward.core.worker_process import worker_main_from_file
+
+# Worker parameters
+worker_id = {self.worker_id}
+config_file_path = {repr(config_file_path)}
+results_path = {repr(results_path)}
+
+# Run the worker
+worker_main_from_file(worker_id, config_file_path, results_path)
+'''
+            
+            # Prepare command to run the worker entry code
+            python_executable = self._get_python_executable()
+            
             if self.conda_env:
                 # Use conda environment
                 cmd = [
                     "conda", "run", "-n", self.conda_env,
-                    "python", worker_script_path, str(self.worker_id)
+                    python_executable, "-c", worker_entry
                 ]
             else:
                 # Use current Python environment
-                cmd = ["python", worker_script_path, str(self.worker_id)]
-            
-            print(f"DEBUG: Worker {self.worker_id} command: {cmd}")
+                cmd = [python_executable, "-c", worker_entry]
             
             # Start the subprocess
             self.process = subprocess.Popen(
@@ -98,8 +125,6 @@ class Worker:
                 bufsize=0,  # Unbuffered for immediate output
                 universal_newlines=True
             )
-            
-            print(f"DEBUG: Worker {self.worker_id} subprocess started with PID: {self.process.pid}")
             
             # Check if process started successfully
             if self.process.poll() is not None:
@@ -114,7 +139,6 @@ class Worker:
             # Start monitoring thread
             self._start_monitoring()
             
-            print(f"DEBUG: Worker {self.worker_id} started successfully")
             return True
             
         except Exception as e:
@@ -132,11 +156,7 @@ class Worker:
         Returns:
             True if task was assigned successfully, False otherwise
         """
-        print(f"DEBUG: Attempting to assign task {task.task_id} to worker {self.worker_id}")
-        print(f"DEBUG: Worker {self.worker_id} status: {self.status}, process: {self.process is not None}")
-        
         if self.status != "idle" or self.process is None:
-            print(f"DEBUG: Worker {self.worker_id} not ready - status: {self.status}, process exists: {self.process is not None}")
             return False
         
         # Check if process is still alive
@@ -147,6 +167,7 @@ class Worker:
             return False
         
         try:
+<<<<<<< HEAD
             # Update hierarchical state if needed
             state_changed = self.update_hierarchical_state(task)
             if state_changed:
@@ -154,11 +175,11 @@ class Worker:
             
             print(f"DEBUG: Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
+=======
+>>>>>>> b4da4bfd29a091af18fd4f2429364fc07840e1f2
             # Send task ID to worker via stdin
             self.process.stdin.write(f"{task.task_id}\n")
             self.process.stdin.flush()
-            
-            print(f"DEBUG: Task {task.task_id} sent successfully to worker {self.worker_id}")
             
             self.current_task = task
             self.status = "busy"
@@ -170,7 +191,6 @@ class Worker:
             
         except Exception as e:
             print(f"Failed to assign task to worker {self.worker_id}: {e}")
-            print(f"DEBUG: Process state - poll: {self.process.poll()}, stdin: {self.process.stdin}")
             import traceback
             traceback.print_exc()
             return False
@@ -182,30 +202,24 @@ class Worker:
             True if task succeeded, False if failed, None if still running
         """
         if self.status != "busy" or self.process is None or self.current_task is None:
-            print(f"DEBUG: Worker {self.worker_id} check_task_completion early return - status: {self.status}, process: {self.process is not None}, task: {self.current_task is not None}")
             return None
-        
-        print(f"DEBUG: Worker {self.worker_id} checking task completion for task {self.current_task.task_id}")
         
         # Check if process has output available
         if self.process.poll() is not None:
             # Process has terminated - this shouldn't happen during normal task execution
-            print(f"DEBUG: Worker {self.worker_id} process terminated unexpectedly with return code: {self.process.returncode}")
             self.status = "idle"
             self.current_task.status = "failed"
             self.current_task.end_time = time.time()
             self.total_tasks_failed += 1
-            self.current_task = None
+            # Don't clear current_task yet - the caller needs it
             return False
         
         # Check for task completion signal (worker should send result via stdout)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            print(f"DEBUG: Worker {self.worker_id} using select for task completion check")
             if select.select([self.process.stdout], [], [], 0)[0]:
                 result_line = self.process.stdout.readline().strip()
-                print(f"DEBUG: Worker {self.worker_id} received result line: '{result_line}'")
                 if result_line:
                     success = result_line == "SUCCESS"
                     
@@ -213,19 +227,15 @@ class Worker:
                     self.current_task.end_time = time.time()
                     
                     if success:
-                        self.total_tasks_completed += 1
+                        self.total_tasks_succeeded += 1
                     else:
                         self.total_tasks_failed += 1
                     
-                    self.current_task = None
+                    # Don't clear current_task here - let the main loop do it
                     self.status = "idle"
                     
-                    print(f"DEBUG: Worker {self.worker_id} task completed with result: {success}")
                     return success
-            else:
-                print(f"DEBUG: Worker {self.worker_id} no output available via select")
         except (ImportError, OSError) as e:
-            print(f"DEBUG: Worker {self.worker_id} select not available ({e}), using Windows fallback")
             # Windows fallback using threading with timeout
             try:
                 import threading
@@ -254,8 +264,6 @@ class Worker:
                 
                 # Try to read a line with a short timeout
                 result_line = read_line_with_timeout(self.process, 0.1)
-                print(f"DEBUG: Worker {self.worker_id} Windows fallback got line: '{result_line}'")
-                
                 if result_line and result_line in ["SUCCESS", "FAILURE"]:
                     success = result_line == "SUCCESS"
                     
@@ -263,21 +271,18 @@ class Worker:
                     self.current_task.end_time = time.time()
                     
                     if success:
-                        self.total_tasks_completed += 1
+                        self.total_tasks_succeeded += 1
                     else:
                         self.total_tasks_failed += 1
                     
-                    self.current_task = None
+                    # Don't clear current_task here - let the main loop do it
                     self.status = "idle"
                     
-                    print(f"DEBUG: Worker {self.worker_id} task completed via Windows fallback with result: {success}")
                     return success
                         
             except Exception as e:
-                print(f"DEBUG: Worker {self.worker_id} Windows fallback failed: {e}")
                 pass
         
-        print(f"DEBUG: Worker {self.worker_id} task still running")
         return None
     
     def shutdown(self) -> None:
@@ -363,7 +368,7 @@ class Worker:
             "status": self.status,
             "gpu_ids": self.gpu_ids,
             "current_task": str(self.current_task) if self.current_task else None,
-            "total_tasks_completed": self.total_tasks_completed,
+            "total_tasks_succeeded": self.total_tasks_succeeded,
             "total_tasks_failed": self.total_tasks_failed,
             "cpu_percent": {
                 "current": self.current_cpu_percent,

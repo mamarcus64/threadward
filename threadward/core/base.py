@@ -208,6 +208,8 @@ class Threadward(ABC):
                 return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
         mock_config = MockConfig(self)
+        # Add the file path to the mock config
+        mock_config.__file__ = config_file_path
         
         # Create and run threadward instance
         threadward_core = ThreadwardCore(config_dir, mock_config)

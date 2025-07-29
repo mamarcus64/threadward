@@ -9,6 +9,7 @@ from queue import Queue, Empty
 from .task import Task
 from .worker import Worker
 from .variable_set import VariableSet
+from .interactive import InteractiveHandler
 
 try:
     import GPUtil
@@ -28,16 +29,19 @@ class Threadward:
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
+        self.config_file_path = getattr(config_module, '__file__', None)
         
         # Create results directory structure
         self.results_path = os.path.join(project_path, "threadward_results")
         self.task_queue_path = os.path.join(self.results_path, "task_queue")
         
         # Task management
-        self.tasks: List[Task] = []
+        self.all_tasks: List[Task] = []  # All tasks including skipped ones
+        self.tasks: List[Task] = []      # Only tasks to be executed (non-skipped)
         self.task_queue: Queue = Queue()
-        self.completed_tasks: List[Task] = []
+        self.succeeded_tasks: List[Task] = []
         self.failed_tasks: List[Task] = []
+        self.skipped_tasks: List[Task] = []
         
         # Worker management
         self.workers: List[Worker] = []
@@ -47,6 +51,9 @@ class Threadward:
         self.start_time: Optional[float] = None
         self.is_running = False
         self.should_stop = False
+        
+        # Interactive handler
+        self.interactive_handler: Optional[InteractiveHandler] = None
         
         # Load configuration from module
         self._load_configuration()
@@ -92,8 +99,14 @@ class Threadward:
         
         if existing_folder_handling == "SKIP":
             print(f"Found {len(existing_folders)} existing task folders - skipping these tasks")
-            # Remove tasks with existing folders
-            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            # Separate tasks into skipped and non-skipped
+            remaining_tasks = []
+            for task in self.tasks:
+                if os.path.exists(task.task_folder):
+                    self.skipped_tasks.append(task)
+                else:
+                    remaining_tasks.append(task)
+            self.tasks = remaining_tasks
             print(f"Remaining tasks to execute: {len(self.tasks)}")
             return True
             
@@ -121,7 +134,14 @@ class Threadward:
         else:
             print(f"Warning: Unknown EXISTING_FOLDER_HANDLING value: {existing_folder_handling}")
             print("Using default behavior (SKIP)")
-            self.tasks = [task for task in self.tasks if not os.path.exists(task.task_folder)]
+            # Separate tasks into skipped and non-skipped
+            remaining_tasks = []
+            for task in self.tasks:
+                if os.path.exists(task.task_folder):
+                    self.skipped_tasks.append(task)
+                else:
+                    remaining_tasks.append(task)
+            self.tasks = remaining_tasks
             return True
     
     def generate_tasks(self) -> bool:
@@ -157,7 +177,7 @@ class Threadward:
             combinations = variable_set.generate_combinations()
             
             # Create tasks from combinations
-            self.tasks = []
+            self.all_tasks = []
             for i, combo in enumerate(combinations):
                 task_id = f"task_{i:06d}"
                 
@@ -175,7 +195,10 @@ class Threadward:
                     hierarchy_info=hierarchy_info
                 )
                 
-                self.tasks.append(task)
+                self.all_tasks.append(task)
+            
+            # Initially, all tasks are to be executed
+            self.tasks = self.all_tasks.copy()
             
             # Create results directory and task_queue folder
             os.makedirs(self.results_path, exist_ok=True)
@@ -207,7 +230,7 @@ class Threadward:
             with open(all_tasks_path, 'w') as f:
                 json.dump(tasks_data, f, indent=2)
             
-            print(f"Generated {len(self.tasks)} tasks")
+            print(f"Generated {len(self.all_tasks)} total tasks ({len(self.tasks)} to execute, {len(self.skipped_tasks)} skipped)")
             return True
             
         except Exception as e:
@@ -274,12 +297,9 @@ class Threadward:
             True if all workers started successfully, False otherwise
         """
         try:
-            # Create worker script
-            worker_script_path = self._create_worker_script()
-            
             success_count = 0
             for worker in self.workers:
-                if worker.start(worker_script_path):
+                if worker.start(self.config_file_path, self.results_path):
                     success_count += 1
                 else:
                     print(f"Failed to start worker {worker.worker_id}")
@@ -295,6 +315,7 @@ class Threadward:
             print(f"Error starting workers: {e}")
             return False
     
+<<<<<<< HEAD
     def _create_worker_script(self) -> str:
         """Create the worker script that will be executed by subprocesses."""
         # Get the config file path from the config module
@@ -538,6 +559,8 @@ if __name__ == "__main__":
         
         return worker_script_path
     
+=======
+>>>>>>> b4da4bfd29a091af18fd4f2429364fc07840e1f2
     def run(self) -> None:
         """Run the main threadward execution loop."""
         print("Starting Threadward execution...")
@@ -570,11 +593,19 @@ if __name__ == "__main__":
         self.is_running = True
         self.start_time = time.time()
         
+        # Start interactive handler
+        self.interactive_handler = InteractiveHandler(self)
+        self.interactive_handler.start()
+        
         try:
             # Main execution loop
             self._execution_loop()
             
         finally:
+            # Stop interactive handler
+            if self.interactive_handler:
+                self.interactive_handler.stop()
+            
             # Cleanup
             self._shutdown_workers()
             
@@ -596,12 +627,14 @@ if __name__ == "__main__":
                         task = worker.current_task
                         if task is not None:
                             if result:
-                                self.completed_tasks.append(task)
+                                self.succeeded_tasks.append(task)
                                 self._log_task_result(task, True)
                             else:
                                 self.failed_tasks.append(task)
                                 self._log_task_result(task, False)
                                 self._handle_task_failure(task)
+                            # Clear the current task after logging
+                            worker.current_task = None
                 
                 # Assign new task if worker is idle
                 if worker.status == "idle" and not self.task_queue.empty():
@@ -624,12 +657,14 @@ if __name__ == "__main__":
                         task = worker.current_task
                         if task is not None:
                             if result:
-                                self.completed_tasks.append(task)
+                                self.succeeded_tasks.append(task)
                                 self._log_task_result(task, True)
                             else:
                                 self.failed_tasks.append(task)
                                 self._log_task_result(task, False)
                                 self._handle_task_failure(task)
+                            # Clear the current task after logging
+                            worker.current_task = None
             
             time.sleep(0.1)
     
@@ -684,6 +719,7 @@ if __name__ == "__main__":
         
         with open(result_path, 'a') as f:
             f.write(f"{task.task_id}\n")
+            f.flush()  # Ensure it's written to disk immediately
     
     def _handle_task_failure(self, task: Task) -> None:
         """Handle a failed task based on FAILURE_HANDLING setting."""
@@ -714,12 +750,15 @@ if __name__ == "__main__":
         current_time = time.time()
         elapsed_time = current_time - self.start_time if self.start_time else 0
         
-        total_tasks = len(self.tasks)
-        completed_count = len(self.completed_tasks)
+        # Total tasks includes all tasks (skipped and non-skipped)
+        total_all_tasks = len(self.all_tasks)
+        non_skipped_total = len(self.tasks) + len(self.succeeded_tasks) + len(self.failed_tasks)
+        skipped_count = len(self.skipped_tasks)
+        succeeded_count = len(self.succeeded_tasks)
         failed_count = len(self.failed_tasks)
-        remaining_count = total_tasks - completed_count - failed_count
+        remaining_count = len(self.tasks) - succeeded_count - failed_count
         
-        avg_time_per_task = elapsed_time / max(completed_count + failed_count, 1)
+        avg_time_per_task = elapsed_time / max(succeeded_count + failed_count, 1)
         estimated_remaining_time = avg_time_per_task * remaining_count if remaining_count > 0 else 0
         
         return {
@@ -727,8 +766,10 @@ if __name__ == "__main__":
             "avg_time_per_task": avg_time_per_task,
             "estimated_remaining_time": estimated_remaining_time,
             "tasks": {
-                "total": total_tasks,
-                "completed": completed_count,
+                "total": total_all_tasks,
+                "non_skipped_total": non_skipped_total,
+                "skipped": skipped_count,
+                "succeeded": succeeded_count,
                 "failed": failed_count,
                 "remaining": remaining_count
             },
