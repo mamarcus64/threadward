@@ -266,15 +266,20 @@ def worker_main(worker_id, config_module, results_path):
                 sys.stdout = original_stdout
                 print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
                 sys.stdout.flush()
-                # Include task ID with the result to avoid confusion
+                
+                # Write result to a dedicated result file instead of stdout to avoid pipe issues
                 result_msg = f"{task_data['task_id']}:TASK_SUCCESS_RESPONSE" if success else f"{task_data['task_id']}:TASK_FAILURE_RESPONSE"
-                print(result_msg, flush=True)
-                sys.stdout.flush()
-                # Extra flush to ensure it's sent immediately
+                result_file = os.path.join(task_data['task_folder'], f"{task_data['task_id']}_result.txt")
                 try:
-                    os.fsync(sys.stdout.fileno())
-                except:
-                    pass  # fsync might fail on some file descriptors
+                    with open(result_file, 'w') as f:
+                        f.write(result_msg)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    print(f"DEBUG: Worker {worker_id} wrote result to {result_file}", flush=True)
+                except Exception as e:
+                    print(f"ERROR: Worker {worker_id} failed to write result file: {e}", flush=True)
+                    # Fallback to stdout
+                    print(result_msg, flush=True)
                 
             except Exception as e:
                 print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)

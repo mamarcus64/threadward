@@ -322,8 +322,41 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Don't clear current_task yet - the caller needs it
             return False
         
-        # First check if we have a buffered result for the current task
+        # First check if there's a result file for the current task
         task_id = self.current_task.task_id
+        result_file = os.path.join(self.current_task.task_folder, f"{task_id}_result.txt")
+        
+        if os.path.exists(result_file):
+            try:
+                with open(result_file, 'r') as f:
+                    result_content = f.read().strip()
+                
+                if ":" in result_content:
+                    result_task_id, result_type = result_content.split(":", 1)
+                    if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                        success = result_type == "TASK_SUCCESS_RESPONSE"
+                        self._debug_print(f"Worker {self.worker_id} found result file for {task_id}: {result_type}")
+                        
+                        # Remove the result file after reading
+                        try:
+                            os.remove(result_file)
+                        except:
+                            pass
+                        
+                        self.current_task.status = "completed" if success else "failed"
+                        self.current_task.end_time = time.time()
+                        
+                        if success:
+                            self.total_tasks_succeeded += 1
+                        else:
+                            self.total_tasks_failed += 1
+                        
+                        self.status = "idle"
+                        return success
+            except Exception as e:
+                self._debug_print(f"Worker {self.worker_id} error reading result file: {e}")
+        
+        # Then check buffered results (keep as fallback)
         for i, line in enumerate(self.output_buffer):
             if ":" in line:
                 result_task_id, result_type = line.split(":", 1)
