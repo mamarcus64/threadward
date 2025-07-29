@@ -209,7 +209,7 @@ def worker_main(worker_id, config_module, results_path):
             if task_data is None:
                 print(f"ERROR: Worker {worker_id} could not find task '{line}' in all_tasks_data", flush=True)
                 print(f"DEBUG: Available task IDs: {[t.get('task_id', 'NO_ID') for t in all_tasks_data[:5]]}..." if all_tasks_data else "DEBUG: all_tasks_data is empty", flush=True)
-                print("FAILURE", flush=True)
+                print("TASK_FAILURE_RESPONSE", flush=True)
                 sys.stdout.flush()
                 continue
             
@@ -254,13 +254,13 @@ def worker_main(worker_id, config_module, results_path):
                 success = execute_task(config_module, task_data, convert_variables)
                 print(f"DEBUG: Worker {worker_id} task execution completed, success: {success}", flush=True)
                 sys.stdout.flush()
-                print("SUCCESS" if success else "FAILURE", flush=True)
+                print("TASK_SUCCESS_RESPONSE" if success else "TASK_FAILURE_RESPONSE", flush=True)
                 sys.stdout.flush()
                 
             except Exception as e:
                 print(f"ERROR: Worker {worker_id} exception during task processing: {e}", flush=True)
                 print(f"DEBUG: Worker {worker_id} exception traceback: {traceback.format_exc()}", flush=True)
-                print("FAILURE", flush=True)
+                print("TASK_FAILURE_RESPONSE", flush=True)
                 sys.stdout.flush()
     
     finally:

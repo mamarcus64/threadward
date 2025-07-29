@@ -281,7 +281,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             if select.select([self.process.stdout], [], [], 0)[0]:
                 result_line = self.process.stdout.readline().strip()
                 if result_line:
-                    success = result_line == "SUCCESS"
+                    success = result_line == "TASK_SUCCESS_RESPONSE"
                     
                     self.current_task.status = "completed" if success else "failed"
                     self.current_task.end_time = time.time()
@@ -324,8 +324,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 
                 # Try to read a line with a short timeout
                 result_line = read_line_with_timeout(self.process, 0.1)
-                if result_line and result_line in ["SUCCESS", "FAILURE"]:
-                    success = result_line == "SUCCESS"
+                if result_line and result_line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                    success = result_line == "TASK_SUCCESS_RESPONSE"
                     
                     self.current_task.status = "completed" if success else "failed"
                     self.current_task.end_time = time.time()
