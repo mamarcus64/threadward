@@ -360,33 +360,47 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 check_timeout = min(0.5, remaining_timeout)
             
             if select.select([self.process.stdout], [], [], check_timeout)[0]:
-                result_line = self.process.stdout.readline().strip()
-                if result_line:
-                    # Check if it's a task result
-                    if ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
-                        result_task_id, result_type = result_line.split(":", 1)
-                        if result_task_id == task_id:
-                            success = result_type == "TASK_SUCCESS_RESPONSE"
-                            
-                            self.current_task.status = "completed" if success else "failed"
-                            self.current_task.end_time = time.time()
-                            
-                            if success:
-                                self.total_tasks_succeeded += 1
-                            else:
-                                self.total_tasks_failed += 1
-                            
-                            # Don't clear current_task here - let the main loop do it
-                            self.status = "idle"
-                            
-                            return success
+                # Read all available lines to avoid blocking
+                lines_read = []
+                try:
+                    while select.select([self.process.stdout], [], [], 0)[0]:
+                        line = self.process.stdout.readline().strip()
+                        if line:
+                            lines_read.append(line)
                         else:
-                            # Result for a different task - buffer it
-                            self.output_buffer.append(result_line)
-                            self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
-                    elif "DEBUG:" not in result_line:
-                        # Non-debug output that's not a result
-                        self._debug_print(f"Worker {self.worker_id} output: {result_line}")
+                            break
+                except:
+                    pass
+                
+                # Process all the lines we read
+                for result_line in lines_read:
+                    if result_line:
+                        # Check if it's a task result
+                        if ":" in result_line and (":TASK_SUCCESS_RESPONSE" in result_line or ":TASK_FAILURE_RESPONSE" in result_line):
+                            result_task_id, result_type = result_line.split(":", 1)
+                            if result_task_id == task_id:
+                                success = result_type == "TASK_SUCCESS_RESPONSE"
+                                self._debug_print(f"Worker {self.worker_id} found immediate result for {task_id}: {result_type}")
+                                
+                                self.current_task.status = "completed" if success else "failed"
+                                self.current_task.end_time = time.time()
+                                
+                                if success:
+                                    self.total_tasks_succeeded += 1
+                                else:
+                                    self.total_tasks_failed += 1
+                                
+                                # Don't clear current_task here - let the main loop do it
+                                self.status = "idle"
+                                
+                                return success
+                            else:
+                                # Result for a different task - buffer it
+                                self.output_buffer.append(result_line)
+                                self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
+                        elif "DEBUG:" not in result_line:
+                            # Non-debug output that's not a result
+                            self._debug_print(f"Worker {self.worker_id} output: {result_line}")
         except (ImportError, OSError) as e:
             # Windows fallback using threading with timeout
             try:
