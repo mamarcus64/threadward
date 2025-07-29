@@ -150,7 +150,8 @@ def worker_main(worker_id, config_module, results_path):
                 line = input().strip()
             except EOFError:
                 # Parent process closed stdin, worker should exit
-                print("INFO: Parent process closed stdin, worker exiting", flush=True)
+                print(f"INFO: Worker {worker_id} received EOFError - parent process closed stdin, worker exiting", flush=True)
+                print(f"DEBUG: Worker {worker_id} stdin state: closed={sys.stdin.closed if hasattr(sys.stdin, 'closed') else 'unknown'}", flush=True)
                 break
             
             if line == "SHUT_DOWN":

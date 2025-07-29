@@ -162,8 +162,17 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         # Check if process is still alive
         if self.process.poll() is not None:
             print(f"ERROR: Worker {self.worker_id} process has terminated (return code: {self.process.returncode})")
+            print(f"DEBUG: Worker {self.worker_id} process pid: {self.process.pid}")
+            print(f"DEBUG: Worker {self.worker_id} current task: {self.current_task.task_id if self.current_task else 'None'}")
             stderr_output = self.process.stderr.read()
             print(f"ERROR: Worker {self.worker_id} stderr: {stderr_output}")
+            # Try to read any remaining stdout as well
+            try:
+                stdout_output = self.process.stdout.read()
+                if stdout_output:
+                    print(f"DEBUG: Worker {self.worker_id} final stdout: {stdout_output}")
+            except:
+                pass
             return False
         
         try:
@@ -176,10 +185,31 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
             # Send task ID to worker via stdin
             if self.process.stdin and not self.process.stdin.closed:
-                self.process.stdin.write(f"{task.task_id}\n")
-                self.process.stdin.flush()
+                try:
+                    self.process.stdin.write(f"{task.task_id}\n")
+                    self.process.stdin.flush()
+                except BrokenPipeError as e:
+                    print(f"ERROR: Worker {self.worker_id} broken pipe when writing task ID: {e}")
+                    print(f"DEBUG: Worker {self.worker_id} process poll: {self.process.poll()}")
+                    print(f"DEBUG: Worker {self.worker_id} process pid: {self.process.pid}")
+                    # Check if process is still alive
+                    if self.process.poll() is not None:
+                        print(f"DEBUG: Worker {self.worker_id} process has terminated with return code: {self.process.poll()}")
+                        # Try to read any remaining stderr
+                        try:
+                            stderr_output = self.process.stderr.read()
+                            if stderr_output:
+                                print(f"DEBUG: Worker {self.worker_id} final stderr: {stderr_output}")
+                        except:
+                            pass
+                    return False
+                except Exception as e:
+                    print(f"ERROR: Worker {self.worker_id} unexpected error writing to stdin: {e}")
+                    return False
             else:
-                print(f"ERROR: Worker {self.worker_id} stdin is closed")
+                print(f"ERROR: Worker {self.worker_id} stdin is closed or None")
+                print(f"DEBUG: Worker {self.worker_id} stdin state: {self.process.stdin}")
+                print(f"DEBUG: Worker {self.worker_id} process poll: {self.process.poll()}")
                 return False
             
             self.current_task = task
