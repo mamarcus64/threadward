@@ -220,7 +220,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     self.status = "idle"
                     
                     return success
-            else:
         except (ImportError, OSError) as e:
             # Windows fallback using threading with timeout
             try:
