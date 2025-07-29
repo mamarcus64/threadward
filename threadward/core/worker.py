@@ -265,12 +265,13 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 ack_received = True
                                 self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
-                                # Buffer any other output for later processing
-                                self.output_buffer.append(line)
+                                # Only buffer task results, ignore debug output
                                 if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                    self.output_buffer.append(line)
                                     self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
-                                else:
-                                    self._debug_print(f"Worker {self.worker_id} buffered output: {line}")
+                                elif "DEBUG:" not in line and line != "WORKER_READY":
+                                    # Log non-debug output for debugging
+                                    self._debug_print(f"Worker {self.worker_id} output: {line}")
                         except:
                             pass
                 else:
@@ -303,6 +304,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         if self.status != "busy" or self.process is None or self.current_task is None:
             return None
         
+        self._debug_print(f"Worker {self.worker_id} checking completion for task {self.current_task.task_id}, buffer size: {len(self.output_buffer)}")
+        
         # Check if process has output available
         if self.process.poll() is not None:
             # Process has terminated - this shouldn't happen during normal task execution
@@ -313,13 +316,15 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             # Don't clear current_task yet - the caller needs it
             return False
         
-        # First check if we have a buffered result
+        # First check if we have a buffered result for the current task
+        # Only check buffer if we haven't already checked for this task
+        task_id = self.current_task.task_id
         for i, line in enumerate(self.output_buffer):
             if line in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
-                # Found a buffered result
+                # Found a buffered result - make sure it's for the current task
                 self.output_buffer.pop(i)
                 success = line == "TASK_SUCCESS_RESPONSE"
-                self._debug_print(f"Worker {self.worker_id} found buffered result: {line}")
+                self._debug_print(f"Worker {self.worker_id} found buffered result for {task_id}: {line}")
                 
                 self.current_task.status = "completed" if success else "failed"
                 self.current_task.end_time = time.time()
@@ -336,9 +341,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
         try:
             # Try to use select for non-blocking read (Unix/Linux/macOS)
             import select
-            # Use configured timeout (-1 means no timeout)
-            timeout = None if self.task_timeout == -1 else self.task_timeout
-            if select.select([self.process.stdout], [], [], timeout)[0]:
+            # Use a reasonable timeout for checking results
+            check_timeout = min(1.0, self.task_timeout if self.task_timeout != -1 else 1.0)
+            if select.select([self.process.stdout], [], [], check_timeout)[0]:
                 result_line = self.process.stdout.readline().strip()
                 if result_line:
                     success = result_line == "TASK_SUCCESS_RESPONSE"
