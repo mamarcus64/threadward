@@ -62,11 +62,11 @@ class Worker:
             import sys
             return sys.executable
     
-    def start(self, config_module, results_path: str) -> bool:
+    def start(self, config_file_path: str, results_path: str) -> bool:
         """Start the worker subprocess.
         
         Args:
-            config_module: The configuration module with task methods
+            config_file_path: Path to the configuration file
             results_path: Path to the results directory
             
         Returns:
@@ -87,16 +87,15 @@ class Worker:
             # Create worker entry script that imports and runs the worker process
             worker_entry = f'''
 import sys
-import pickle
-from threadward.core.worker_process import worker_main
+from threadward.core.worker_process import worker_main_from_file
 
-# Load config module from pickle
-config_module = pickle.loads({repr(pickle.dumps(config_module))})
+# Worker parameters
 worker_id = {self.worker_id}
+config_file_path = {repr(config_file_path)}
 results_path = {repr(results_path)}
 
 # Run the worker
-worker_main(worker_id, config_module, results_path)
+worker_main_from_file(worker_id, config_file_path, results_path)
 '''
             
             # Prepare command to run the worker entry code

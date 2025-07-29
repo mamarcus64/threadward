@@ -28,6 +28,7 @@ class Threadward:
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
+        self.config_file_path = getattr(config_module, '__file__', None)
         
         # Create results directory structure
         self.results_path = os.path.join(project_path, "threadward_results")
@@ -258,7 +259,7 @@ class Threadward:
         try:
             success_count = 0
             for worker in self.workers:
-                if worker.start(self.config_module, self.results_path):
+                if worker.start(self.config_file_path, self.results_path):
                     success_count += 1
                 else:
                     print(f"Failed to start worker {worker.worker_id}")

@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import traceback
+import importlib.util
 
 
 class TeeOutput:
@@ -130,6 +131,67 @@ def worker_main(worker_id, config_module, results_path):
         # Call after_each_worker
         if hasattr(config_module, 'after_each_worker'):
             config_module.after_each_worker(worker_id)
+
+
+def worker_main_from_file(worker_id, config_file_path, results_path):
+    """Main worker process loop that loads config from file."""
+    # Load the configuration module
+    spec = importlib.util.spec_from_file_location("config", config_file_path)
+    config_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_module)
+    
+    # Check if this is a class-based runner
+    runner_instance = None
+    for attr_name in dir(config_module):
+        attr = getattr(config_module, attr_name)
+        if (isinstance(attr, type) and 
+            attr.__module__ == config_module.__name__ and
+            hasattr(attr, 'task_method')):
+            # Found a runner class, instantiate it
+            runner_instance = attr()
+            break
+    
+    if runner_instance:
+        # Create a wrapper module that delegates to the runner instance
+        class ModuleWrapper:
+            def __init__(self, runner):
+                self.runner = runner
+                # Copy constraints as module attributes
+                if hasattr(runner, '_constraints'):
+                    for key, value in runner._constraints.items():
+                        setattr(self, key, value)
+            
+            def task_method(self, variables, task_folder, log_file):
+                return self.runner.task_method(variables, task_folder, log_file)
+            
+            def verify_task_success(self, variables, task_folder, log_file):
+                return self.runner.verify_task_success(variables, task_folder, log_file)
+            
+            def setup_variable_set(self, variable_set):
+                return self.runner.setup_variable_set(variable_set)
+            
+            def before_all_tasks(self):
+                return self.runner.before_all_tasks()
+            
+            def after_all_tasks(self):
+                return self.runner.after_all_tasks()
+            
+            def before_each_worker(self, worker_id):
+                return self.runner.before_each_worker(worker_id)
+            
+            def after_each_worker(self, worker_id):
+                return self.runner.after_each_worker(worker_id)
+            
+            def before_each_task(self, variables, task_folder, log_file):
+                return self.runner.before_each_task(variables, task_folder, log_file)
+            
+            def after_each_task(self, variables, task_folder, log_file):
+                return self.runner.after_each_task(variables, task_folder, log_file)
+        
+        config_module = ModuleWrapper(runner_instance)
+    
+    # Run the main worker loop
+    worker_main(worker_id, config_module, results_path)
 
 
 if __name__ == "__main__":
