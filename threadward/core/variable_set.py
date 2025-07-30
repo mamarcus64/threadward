@@ -264,14 +264,15 @@ class VariableSet:
         """Get information about which variables have converters.
         
         Returns:
-            Dict mapping variable names to converter function names
+            Dict mapping variable names to their converter function names
         """
         converter_info = {}
         for var in self.variables:
             if var.get("to_value") is not None:
-                # Store the variable name that has a converter
-                # The to_value function should be defined in the config module as {var_name}_to_value
-                converter_info[var["name"]] = var["name"] + "_to_value"
+                func = var["to_value"]
+                func_name = func.__name__ if hasattr(func, '__name__') else f"{var['name']}_converter"
+                # Store the function name so workers can look it up
+                converter_info[var["name"]] = func_name
         return converter_info
     
     def export_converters(self, module):
@@ -280,7 +281,23 @@ class VariableSet:
         Args:
             module: The config module to add converter functions to
         """
+        # Store mapping from variable names to their converter function names
+        # This allows workers to find the original function by name
+        converter_function_names = {}
+        converter_functions = {}
+        
         for var in self.variables:
             if var.get("to_value") is not None:
-                # Set the converter function as an attribute on the module
-                setattr(module, var["name"] + "_to_value", var["to_value"])
+                func = var["to_value"]
+                func_name = func.__name__ if hasattr(func, '__name__') else f"{var['name']}_converter"
+                
+                # Store both the function and its name mapping
+                converter_functions[var["name"]] = func
+                converter_function_names[var["name"]] = func_name
+                
+                # Also set the function as a module attribute for backward compatibility
+                setattr(module, f"{var['name']}_converter", func)
+        
+        # Set both the function dict and name mapping as module attributes
+        setattr(module, '_threadward_converters', converter_functions)
+        setattr(module, '_threadward_converter_names', converter_function_names)

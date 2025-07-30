@@ -215,11 +215,11 @@ def worker_main(worker_id, config_module, results_path):
     if isinstance(tasks_json, list):
         # Old format - just a list of tasks
         all_tasks_data = tasks_json
-        converter_info = {}
+        global_converter_info = {}
     else:
         # New format with converter info
         all_tasks_data = tasks_json.get("tasks", [])
-        converter_info = tasks_json.get("converter_info", {})
+        global_converter_info = tasks_json.get("converter_info", {})
     
     # Cache for converted values - only keep the most recent value per variable
     conversion_cache = {}  # {var_name: (string_value, converted_value)}
@@ -245,12 +245,36 @@ def worker_main(worker_id, config_module, results_path):
             # Store nickname (use provided nickname or string representation as fallback)
             final_nicknames[var_name] = nicknames.get(var_name, str(value)) if nicknames else str(value)
             
-            # Check if this variable has a converter
-            if has_converters.get(var_name, False):
-                # This variable has a converter - construct function name
-                converter_func_name = var_name + "_to_value"
-                if hasattr(config_module, converter_func_name):
-                    converter_func = getattr(config_module, converter_func_name)
+            # Check if this variable has a converter (check per-task info first, then global)
+            has_converter = has_converters.get(var_name, False) or (var_name in global_converter_info)
+            if has_converter:
+                # This variable has a converter - try multiple approaches to find it
+                converter_func = None
+                
+                # Method 1: Check _threadward_converters dict
+                converters = getattr(config_module, '_threadward_converters', {})
+                if var_name in converters:
+                    converter_func = converters[var_name]
+                    print(f"Found converter for {var_name} in _threadward_converters", flush=True)
+                
+                # Method 2: Use function name from global_converter_info (JSON)
+                if converter_func is None and var_name in global_converter_info:
+                    func_name = global_converter_info[var_name]
+                    if hasattr(config_module, func_name):
+                        converter_func = getattr(config_module, func_name)
+                        print(f"Found converter for {var_name} as {func_name} from JSON", flush=True)
+                
+                # Method 3: Check {var_name}_converter attribute
+                if converter_func is None and hasattr(config_module, f"{var_name}_converter"):
+                    converter_func = getattr(config_module, f"{var_name}_converter")
+                    print(f"Found converter for {var_name} as {var_name}_converter", flush=True)
+                
+                # Method 4: Check {var_name}_to_value attribute (backward compatibility)
+                if converter_func is None and hasattr(config_module, f"{var_name}_to_value"):
+                    converter_func = getattr(config_module, f"{var_name}_to_value")
+                    print(f"Found converter for {var_name} as {var_name}_to_value", flush=True)
+                
+                if converter_func:
                     nickname = final_nicknames[var_name]
                     try:
                         # Convert value to string for the converter function (backward compatibility)
@@ -261,18 +285,29 @@ def worker_main(worker_id, config_module, results_path):
                             print(f"Using cached conversion for variable {var_name} with value '{string_value}'", flush=True)
                             converted[var_name] = conversion_cache[var_name][1]
                         else:
-                            print(f"Converting variable {var_name} with value '{string_value}' via function {converter_func_name}", flush=True)
+                            print(f"Converting variable {var_name} with value '{string_value}' via converter function", flush=True)
                             converted_value = converter_func(string_value, nickname)
                             # Store in cache, replacing any previous value for this variable
                             conversion_cache[var_name] = (string_value, converted_value)
                             converted[var_name] = converted_value
                     except Exception as e:
-                        print(f"Error: Failed to convert {var_name} using {converter_func_name}: {e}", flush=True)
+                        print(f"Error: Failed to convert {var_name} using converter function: {e}", flush=True)
                         import traceback
                         print(f"Traceback: {traceback.format_exc()}", flush=True)
                         converted[var_name] = value
                 else:
-                    print(f"Error: No converter function '{converter_func_name}' found on config_module", flush=True)
+                    # Debug info about what was tried
+                    methods_tried = ["_threadward_converters"]
+                    if var_name in global_converter_info:
+                        methods_tried.append(f"JSON:{global_converter_info[var_name]}")
+                    methods_tried.extend([f"{var_name}_converter", f"{var_name}_to_value"])
+                    
+                    print(f"Error: No converter function found for variable '{var_name}' (tried {', '.join(methods_tried)})", flush=True)
+                    print(f"Debug: global_converter_info = {global_converter_info}", flush=True)
+                    print(f"Debug: _threadward_converters = {getattr(config_module, '_threadward_converters', 'NOT_FOUND')}", flush=True)
+                    if var_name in global_converter_info:
+                        func_name = global_converter_info[var_name]
+                        print(f"Debug: hasattr(config_module, '{func_name}') = {hasattr(config_module, func_name)}", flush=True)
                     # No converter function found, use original value
                     converted[var_name] = value
             else:
@@ -479,11 +514,23 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
                     for key, value in runner._constraints.items():
                         setattr(self, key, value)
                 
-                # Copy module-level *_to_value functions
+                # Copy the _threadward_converters dict if it exists
+                if hasattr(original_module, '_threadward_converters'):
+                    setattr(self, '_threadward_converters', getattr(original_module, '_threadward_converters'))
+                
+                # Copy module-level converter functions (all patterns)
                 for attr_name in dir(original_module):
-                    if attr_name.endswith('_to_value') and not attr_name.startswith('_'):
+                    if (attr_name.endswith('_to_value') or attr_name.endswith('_converter')) and not attr_name.startswith('_'):
                         attr_value = getattr(original_module, attr_name)
                         if callable(attr_value):
+                            setattr(self, attr_name, attr_value)
+                
+                # Also copy all module-level functions that might be converters
+                # Check global_converter_info to know which functions we need
+                if hasattr(original_module, '__dict__'):
+                    for attr_name, attr_value in original_module.__dict__.items():
+                        if callable(attr_value) and not attr_name.startswith('_') and not attr_name[0].isupper():
+                            # Copy all module-level functions (non-class, non-private)
                             setattr(self, attr_name, attr_value)
             
             def task_method(self, variables, task_folder, log_file):
