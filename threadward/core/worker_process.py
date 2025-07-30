@@ -342,9 +342,11 @@ def worker_main(worker_id, config_module, results_path):
                 hierarchy_info = task_data.get("hierarchy_info", {})
                 if hierarchy_info:
                     hierarchical_vars = hierarchy_info.get("hierarchical_variables", [])
+                    print(f"DEBUG: hierarchical_vars: {hierarchical_vars}", flush=True)
                     task_hierarchical_values = {var: task_data["variables"][var] 
                                                for var in hierarchical_vars 
                                                if var in task_data["variables"]}
+                    print(f"DEBUG: task_hierarchical_values: {task_hierarchical_values}", flush=True)
                     
                     # Compute hierarchical key for this task
                     task_hierarchical_key = "|".join(
@@ -353,7 +355,9 @@ def worker_main(worker_id, config_module, results_path):
                     )
                     
                     # Check if we need to load new hierarchical values
+                    print(f"DEBUG: Hierarchical key check - current: '{current_hierarchical_key}', task: '{task_hierarchical_key}'", flush=True)
                     if task_hierarchical_key != current_hierarchical_key:
+                        print(f"DEBUG: Hierarchical key changed, converting hierarchical variables", flush=True)
                         # Unload previous values if any
                         if current_hierarchical_key and hasattr(config_module, 'on_hierarchical_unload'):
                             # Pass converted values to unload
@@ -371,6 +375,8 @@ def worker_main(worker_id, config_module, results_path):
                         current_hierarchical_key = task_hierarchical_key
                         current_hierarchical_values = task_hierarchical_values
                         current_converted_hierarchical_values = converted_hierarchical_values
+                    else:
+                        print(f"DEBUG: Hierarchical key unchanged, reusing existing hierarchical variables", flush=True)
                 
                 # Execute the task
                 print(f"DEBUG: Worker {worker_id} starting task execution for '{task_data['task_id']}'", flush=True)
