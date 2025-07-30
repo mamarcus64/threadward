@@ -169,6 +169,11 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                 # Print variables to log
                 print(converted_variables)
                 print("test print")
+                print(f"DEBUG: convert_variables_func is: {convert_variables_func}")
+                if convert_variables_func:
+                    print(f"DEBUG: Using convert_variables_func")
+                else:
+                    print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace")
                 print()  # Add blank line for readability
                 
                 # Call the main task method
