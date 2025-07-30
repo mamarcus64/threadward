@@ -150,11 +150,13 @@ class Threadward:
                                 task.variables, task.task_folder, log_file
                             )
                             if success:
-                                print(f"Task verified as successful: {task.task_folder}")
+                                if self.debug:
+                                    print(f"Task verified as successful: {task.task_folder}")
                                 self.skipped_tasks.append(task)
                                 verified_count += 1
                             else:
-                                print(f"Task verification failed: {task.task_folder}")
+                                if self.debug:
+                                    print(f"Task verification failed: {task.task_folder}")
                                 remaining_tasks.append(task)
                         except Exception as e:
                             print(f"Error verifying task {task.task_folder}: {e}")

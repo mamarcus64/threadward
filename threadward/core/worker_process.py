@@ -94,7 +94,10 @@ class VariableNamespace:
     
     def __repr__(self):
         """String representation."""
-        return f"VariableNamespace({self._variables})"
+        lines = ["Variables:"]
+        for name, value in self._variables.items():
+            lines.append(f"  {name}: {value}")
+        return "\n".join(lines)
 
 
 class TeeOutput:
@@ -159,6 +162,10 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                 elif hasattr(task_spec, 'OUTPUT_MODE') and task_spec.OUTPUT_MODE == "LOG_FILE_AND_CONSOLE":
                     sys.stdout = TeeOutput(old_stdout, log)
                     sys.stderr = TeeOutput(old_stderr, log)
+                
+                # Print variables to log
+                print(converted_variables)
+                print()  # Add blank line for readability
                 
                 # Call the main task method
                 task_spec.task_method(converted_variables, task_folder, log_file)
@@ -236,17 +243,21 @@ def worker_main(worker_id, config_module, results_path):
             if var_name in converter_info:
                 # This variable has a converter - pass string representation to converter
                 converter_func_name = converter_info[var_name]
+                print(f"DEBUG: Looking for converter function '{converter_func_name}' for variable '{var_name}'", flush=True)
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
                     try:
                         # Convert value to string for the converter function (backward compatibility)
                         string_value = str(value)
+                        print(f"DEBUG: Converting {var_name} from '{string_value}' using {converter_func_name}", flush=True)
                         converted[var_name] = converter_func(string_value, nickname)
+                        print(f"DEBUG: Conversion result: {type(converted[var_name])}", flush=True)
                     except Exception as e:
                         print(f"Warning: Failed to convert {var_name}: {e}", flush=True)
                         converted[var_name] = value
                 else:
+                    print(f"DEBUG: No converter function '{converter_func_name}' found on config_module", flush=True)
                     # No converter function found, use original value
                     converted[var_name] = value
             else:
