@@ -8,6 +8,95 @@ import traceback
 import importlib.util
 
 
+class VariableNamespace:
+    """A namespace class that supports both dot notation and dict-style access."""
+    
+    def __init__(self, variables_dict, original_values=None, nicknames=None):
+        """Initialize with a dictionary of variables.
+        
+        Args:
+            variables_dict: Dict of converted variable values
+            original_values: Dict of original string values  
+            nicknames: Dict of nicknames for each variable
+        """
+        self._variables = variables_dict
+        self._original_values = original_values or {}
+        self._nicknames = nicknames or {}
+    
+    def __getattr__(self, name):
+        """Support dot notation access (variables.model)."""
+        if name.startswith('_'):
+            # Allow access to private attributes like _variables
+            return object.__getattribute__(self, name)
+        if name in self._variables:
+            return self._variables[name]
+        raise AttributeError(f"'VariableNamespace' object has no attribute '{name}'")
+    
+    def __getitem__(self, key):
+        """Support dict-style access (variables['model'])."""
+        return self._variables[key]
+    
+    def __setitem__(self, key, value):
+        """Support dict-style assignment."""
+        self._variables[key] = value
+    
+    def __contains__(self, key):
+        """Support 'in' operator."""
+        return key in self._variables
+    
+    def get(self, key, default=None):
+        """Support dict.get() method."""
+        return self._variables.get(key, default)
+    
+    def get_name(self, value):
+        """Get the original string value for a converted variable value.
+        
+        Args:
+            value: The converted value to look up
+            
+        Returns:
+            The original string value, or None if not found
+        """
+        for var_name, var_value in self._variables.items():
+            if var_value is value:
+                return self._original_values.get(var_name)
+        return None
+    
+    def get_nickname(self, value):
+        """Get the nickname for a converted variable value.
+        
+        Args:
+            value: The converted value to look up
+            
+        Returns:
+            The nickname, or None if not found
+        """
+        for var_name, var_value in self._variables.items():
+            if var_value is value:
+                return self._nicknames.get(var_name)
+        return None
+    
+    def keys(self):
+        """Support dict.keys() method."""
+        return self._variables.keys()
+    
+    def values(self):
+        """Support dict.values() method."""
+        return self._variables.values()
+    
+    def items(self):
+        """Support dict.items() method."""
+        return self._variables.items()
+    
+    def __iter__(self):
+        """Support iteration over keys."""
+        return iter(self._variables)
+    
+    def __repr__(self):
+        """String representation."""
+        return f"VariableNamespace({self._variables})"
+
+
 class TeeOutput:
     """Helper class to write to both console and file."""
     def __init__(self, console, file):
@@ -37,7 +126,10 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     if convert_variables_func:
         converted_variables = convert_variables_func(variables, nicknames)
     else:
-        converted_variables = variables
+        # Create namespace with original values and nicknames even when no conversion needed
+        original_values = dict(variables)  # Variables are already strings
+        final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
+        converted_variables = VariableNamespace(variables, original_values, final_nicknames)
     
     # Create task folder
     print(f"DEBUG: Creating task folder: {task_folder}", flush=True)
@@ -131,13 +223,22 @@ def worker_main(worker_id, config_module, results_path):
     def convert_variables(variables, nicknames=None):
         """Convert string variables to objects using to_value functions."""
         converted = {}
+        original_values = {}
+        final_nicknames = {}
+        
         for var_name, string_value in variables.items():
+            # Store original string value
+            original_values[var_name] = string_value
+            
+            # Store nickname (use provided nickname or string value as fallback)
+            final_nicknames[var_name] = nicknames.get(var_name, string_value) if nicknames else string_value
+            
             if var_name in converter_info:
                 # This variable has a converter
                 converter_func_name = converter_info[var_name]
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
-                    nickname = nicknames.get(var_name, string_value) if nicknames else string_value
+                    nickname = final_nicknames[var_name]
                     try:
                         converted[var_name] = converter_func(string_value, nickname)
                     except Exception as e:
@@ -149,7 +250,8 @@ def worker_main(worker_id, config_module, results_path):
             else:
                 # No converter needed, use string value
                 converted[var_name] = string_value
-        return converted
+        
+        return VariableNamespace(converted, original_values, final_nicknames)
     
     # Track hierarchical state
     current_hierarchical_key = ""
