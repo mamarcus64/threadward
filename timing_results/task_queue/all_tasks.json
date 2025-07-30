@@ -1,0 +1,83 @@
+{
+  "tasks": [
+    {
+      "task_id": "task_000000",
+      "variables": {
+        "model": "model1",
+        "_has_converters": {
+          "model": true
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/timing_results/model1",
+      "log_file": "/Users/mjma/threadward_testing/threadward/timing_results/model1/task_000000.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "model"
+        ]
+      }
+    },
+    {
+      "task_id": "task_000001",
+      "variables": {
+        "model": "model2",
+        "_has_converters": {
+          "model": true
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/timing_results/model2",
+      "log_file": "/Users/mjma/threadward_testing/threadward/timing_results/model2/task_000001.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "model"
+        ]
+      }
+    },
+    {
+      "task_id": "task_000002",
+      "variables": {
+        "model": "model3",
+        "_has_converters": {
+          "model": true
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/timing_results/model3",
+      "log_file": "/Users/mjma/threadward_testing/threadward/timing_results/model3/task_000002.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "model"
+        ]
+      }
+    },
+    {
+      "task_id": "task_000003",
+      "variables": {
+        "model": "model4",
+        "_has_converters": {
+          "model": true
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/timing_results/model4",
+      "log_file": "/Users/mjma/threadward_testing/threadward/timing_results/model4/task_000003.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "model"
+        ]
+      }
+    }
+  ],
+  "converter_info": {
+    "model": "slow_converter"
+  }
+}

@@ -334,8 +334,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         # Remove the result file after reading
                         try:
                             os.remove(result_file)
-                        except:
-                            pass
+                            self._debug_print(f"DEBUG: Deleted result file {result_file} for task {task_id}")
+                        except Exception as e:
+                            self._debug_print(f"DEBUG: Failed to delete result file {result_file}: {e}")
                         
                         self.current_task.status = "completed" if success else "failed"
                         self.current_task.end_time = time.time()
