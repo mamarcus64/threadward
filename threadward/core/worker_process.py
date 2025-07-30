@@ -115,7 +115,7 @@ class TeeOutput:
         self.file.flush()
 
 
-def execute_task(task_spec, task_data, convert_variables_func=None, hierarchical_values=None):
+def execute_task(task_spec, task_data, convert_variables_func=None):
     """Execute a single task."""
     variables = task_data["variables"]
     task_folder = task_data["task_folder"]
@@ -147,36 +147,7 @@ def execute_task(task_spec, task_data, convert_variables_func=None, hierarchical
                 
                 # Convert variables using to_value functions if converter function provided
                 if convert_variables_func:
-                    # Check if we have hierarchical values that were already converted
-                    if hierarchical_values:
-                        # Create a modified convert_variables function that skips hierarchical variables
-                        def convert_variables_skip_hierarchical(variables, nicknames=None):
-                            # Get hierarchical variable names
-                            hierarchy_info = task_data.get("hierarchy_info", {})
-                            hierarchical_vars = hierarchy_info.get("hierarchical_variables", []) if hierarchy_info else []
-                            
-                            # Start with already converted hierarchical values
-                            converted = dict(hierarchical_values._variables)
-                            original_values = dict(hierarchical_values._original_values)
-                            final_nicknames = dict(hierarchical_values._nicknames)
-                            
-                            # Convert only non-hierarchical variables
-                            non_hierarchical_vars = {k: v for k, v in variables.items() 
-                                                   if k not in hierarchical_vars and not k.startswith('_')}
-                            if non_hierarchical_vars:
-                                non_hierarchical_nicknames = {k: v for k, v in (nicknames or {}).items() 
-                                                             if k not in hierarchical_vars}
-                                converted_non_hierarchical = convert_variables_func(non_hierarchical_vars, non_hierarchical_nicknames)
-                                # Merge the results
-                                converted.update(converted_non_hierarchical._variables)
-                                original_values.update(converted_non_hierarchical._original_values)
-                                final_nicknames.update(converted_non_hierarchical._nicknames)
-                            
-                            return VariableNamespace(converted, original_values, final_nicknames)
-                        
-                        converted_variables = convert_variables_skip_hierarchical(variables, nicknames)
-                    else:
-                        converted_variables = convert_variables_func(variables, nicknames)
+                    converted_variables = convert_variables_func(variables, nicknames)
                 else:
                     # Create namespace with original values and nicknames even when no conversion needed
                     original_values = dict(variables)  # Variables may be any JSON type
@@ -250,6 +221,9 @@ def worker_main(worker_id, config_module, results_path):
         all_tasks_data = tasks_json.get("tasks", [])
         converter_info = tasks_json.get("converter_info", {})
     
+    # Cache for converted values - only keep the most recent value per variable
+    conversion_cache = {}  # {var_name: (string_value, converted_value)}
+    
     # Function to convert variables using to_value functions
     def convert_variables(variables, nicknames=None):
         """Convert variables to objects using to_value functions if needed."""
@@ -281,8 +255,17 @@ def worker_main(worker_id, config_module, results_path):
                     try:
                         # Convert value to string for the converter function (backward compatibility)
                         string_value = str(value)
-                        print(f"Converting variable {var_name} with value '{string_value}' via function {converter_func_name}", flush=True)
-                        converted[var_name] = converter_func(string_value, nickname)
+                        
+                        # Check cache first - only if the cached value matches
+                        if var_name in conversion_cache and conversion_cache[var_name][0] == string_value:
+                            print(f"Using cached conversion for variable {var_name} with value '{string_value}'", flush=True)
+                            converted[var_name] = conversion_cache[var_name][1]
+                        else:
+                            print(f"Converting variable {var_name} with value '{string_value}' via function {converter_func_name}", flush=True)
+                            converted_value = converter_func(string_value, nickname)
+                            # Store in cache, replacing any previous value for this variable
+                            conversion_cache[var_name] = (string_value, converted_value)
+                            converted[var_name] = converted_value
                     except Exception as e:
                         print(f"Error: Failed to convert {var_name} using {converter_func_name}: {e}", flush=True)
                         import traceback
@@ -414,7 +397,7 @@ def worker_main(worker_id, config_module, results_path):
                 # Save original stdout to ensure we can send results back
                 original_stdout = sys.stdout
                 
-                success = execute_task(config_module, task_data, convert_variables, current_converted_hierarchical_values)
+                success = execute_task(config_module, task_data, convert_variables)
                 
                 # Restore stdout and send result to parent process
                 sys.stdout = original_stdout
