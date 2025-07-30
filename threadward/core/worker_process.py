@@ -129,6 +129,7 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     print(f"DEBUG: convert_variables_func is: {convert_variables_func}", flush=True)
     if convert_variables_func:
         print(f"DEBUG: Using convert_variables_func", flush=True)
+        print(f"DEBUG: variables keys before conversion: {list(variables.keys())}", flush=True)
         converted_variables = convert_variables_func(variables, nicknames)
     else:
         print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace", flush=True)
@@ -172,6 +173,7 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                 print(f"DEBUG: convert_variables_func is: {convert_variables_func}")
                 if convert_variables_func:
                     print(f"DEBUG: Using convert_variables_func")
+                    print(f"DEBUG: variables keys before conversion: {list(variables.keys())}")
                 else:
                     print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace")
                 print()  # Add blank line for readability
