@@ -122,40 +122,18 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     log_file = task_data["log_file"]
     nicknames = task_data.get("_nicknames", {})
     
-    print(f"DEBUG: execute_task called for task_folder: {task_folder}", flush=True)
-    print(f"DEBUG: execute_task log_file: {log_file}", flush=True)
-    
-    # Convert variables using to_value functions if converter function provided
-    print(f"DEBUG: convert_variables_func is: {convert_variables_func}", flush=True)
-    if convert_variables_func:
-        print(f"DEBUG: Using convert_variables_func", flush=True)
-        print(f"DEBUG: variables keys before conversion: {list(variables.keys())}", flush=True)
-        converted_variables = convert_variables_func(variables, nicknames)
-    else:
-        print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace", flush=True)
-        # Create namespace with original values and nicknames even when no conversion needed
-        original_values = dict(variables)  # Variables may be any JSON type
-        final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
-        converted_variables = VariableNamespace(variables, original_values, final_nicknames)
-    
-    # Create task folder
-    print(f"DEBUG: Creating task folder: {task_folder}", flush=True)
+    # Create task folder first
     try:
         os.makedirs(task_folder, exist_ok=True)
-        print(f"DEBUG: Task folder created successfully", flush=True)
     except Exception as e:
         print(f"ERROR: Failed to create task folder {task_folder}: {e}", flush=True)
         return False
-    
-    # Call before_each_task
-    if hasattr(task_spec, 'before_each_task'):
-        task_spec.before_each_task(converted_variables, task_folder, log_file)
     
     success = False
     try:
         # Execute the main task
         with open(log_file, 'w') as log:
-            # Redirect stdout and stderr to log file
+            # Redirect stdout and stderr to log file early
             old_stdout = sys.stdout
             old_stderr = sys.stderr
             
@@ -167,15 +145,31 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                     sys.stdout = TeeOutput(old_stdout, log)
                     sys.stderr = TeeOutput(old_stderr, log)
                 
-                # Print variables to log
-                print(converted_variables)
-                print("test print")
+                print(f"DEBUG: execute_task called for task_folder: {task_folder}")
+                print(f"DEBUG: execute_task log_file: {log_file}")
+                
+                # Convert variables using to_value functions if converter function provided
                 print(f"DEBUG: convert_variables_func is: {convert_variables_func}")
                 if convert_variables_func:
                     print(f"DEBUG: Using convert_variables_func")
                     print(f"DEBUG: variables keys before conversion: {list(variables.keys())}")
+                    converted_variables = convert_variables_func(variables, nicknames)
                 else:
                     print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace")
+                    # Create namespace with original values and nicknames even when no conversion needed
+                    original_values = dict(variables)  # Variables may be any JSON type
+                    final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
+                    converted_variables = VariableNamespace(variables, original_values, final_nicknames)
+                
+                # Call before_each_task
+                if hasattr(task_spec, 'before_each_task'):
+                    task_spec.before_each_task(converted_variables, task_folder, log_file)
+                
+                # Print variables to log
+                print(converted_variables)
+                print("test print")
+                print(f"DEBUG: converted_variables type: {type(converted_variables)}")
+                print(f"DEBUG: converted benchmark type: {type(converted_variables._variables.get('benchmark', 'NOT_FOUND'))}")
                 print()  # Add blank line for readability
                 
                 # Call the main task method
@@ -240,8 +234,8 @@ def worker_main(worker_id, config_module, results_path):
     # Function to convert variables using to_value functions
     def convert_variables(variables, nicknames=None):
         """Convert variables to objects using to_value functions if needed."""
-        print(f"DEBUG: convert_variables called", flush=True)
-        print(f"DEBUG: raw variables dict keys: {list(variables.keys())}", flush=True)
+        print(f"DEBUG: convert_variables called")
+        print(f"DEBUG: raw variables dict keys: {list(variables.keys())}")
         
         converted = {}
         original_values = {}
@@ -249,7 +243,7 @@ def worker_main(worker_id, config_module, results_path):
         
         # Check if _has_converters is in variables (per-task converter info)
         has_converters = variables.get('_has_converters', {})
-        print(f"DEBUG: has_converters: {has_converters}", flush=True)
+        print(f"DEBUG: has_converters: {has_converters}")
         
         for var_name, value in variables.items():
             # Skip metadata fields
