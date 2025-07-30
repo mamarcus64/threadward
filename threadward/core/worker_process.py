@@ -233,31 +233,39 @@ def worker_main(worker_id, config_module, results_path):
         original_values = {}
         final_nicknames = {}
         
+        # Check if _has_converters is in variables (per-task converter info)
+        has_converters = variables.get('_has_converters', {})
+        
         for var_name, value in variables.items():
+            # Skip metadata fields
+            if var_name.startswith('_'):
+                continue
+                
             # Store original value (may be any JSON type)
             original_values[var_name] = value
             
             # Store nickname (use provided nickname or string representation as fallback)
             final_nicknames[var_name] = nicknames.get(var_name, str(value)) if nicknames else str(value)
             
-            if var_name in converter_info:
-                # This variable has a converter - pass string representation to converter
-                converter_func_name = converter_info[var_name]
-                print(f"DEBUG: Looking for converter function '{converter_func_name}' for variable '{var_name}'", flush=True)
+            # Check if this variable has a converter
+            if has_converters.get(var_name, False):
+                # This variable has a converter - construct function name
+                converter_func_name = var_name + "_to_value"
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
                     try:
                         # Convert value to string for the converter function (backward compatibility)
                         string_value = str(value)
-                        print(f"DEBUG: Converting {var_name} from '{string_value}' using {converter_func_name}", flush=True)
                         converted[var_name] = converter_func(string_value, nickname)
-                        print(f"DEBUG: Conversion result: {type(converted[var_name])}", flush=True)
+                        print(f"Successfully converted {var_name} from '{string_value}' to {type(converted[var_name])}", flush=True)
                     except Exception as e:
-                        print(f"Warning: Failed to convert {var_name}: {e}", flush=True)
+                        print(f"Error: Failed to convert {var_name} using {converter_func_name}: {e}", flush=True)
+                        import traceback
+                        print(f"Traceback: {traceback.format_exc()}", flush=True)
                         converted[var_name] = value
                 else:
-                    print(f"DEBUG: No converter function '{converter_func_name}' found on config_module", flush=True)
+                    print(f"Error: No converter function '{converter_func_name}' found on config_module", flush=True)
                     # No converter function found, use original value
                     converted[var_name] = value
             else:
