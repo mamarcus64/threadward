@@ -263,6 +263,12 @@ def worker_main(worker_id, config_module, results_path):
                 converter_func_name = var_name + "_to_value"
                 print(f"DEBUG: Looking for function '{converter_func_name}' on config_module", flush=True)
                 print(f"DEBUG: hasattr result: {hasattr(config_module, converter_func_name)}", flush=True)
+                # Debug: show all available attributes on config_module
+                available_attrs = [attr for attr in dir(config_module) if not attr.startswith('_')]
+                print(f"DEBUG: Available attributes on config_module: {available_attrs}")
+                # Check specifically for functions ending in _to_value
+                to_value_funcs = [attr for attr in available_attrs if attr.endswith('_to_value')]
+                print(f"DEBUG: Available *_to_value functions: {to_value_funcs}")
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
@@ -473,12 +479,19 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
     if runner_instance:
         # Create a wrapper module that delegates to the runner instance
         class ModuleWrapper:
-            def __init__(self, runner):
+            def __init__(self, runner, original_module):
                 self.runner = runner
                 # Copy constraints as module attributes
                 if hasattr(runner, '_constraints'):
                     for key, value in runner._constraints.items():
                         setattr(self, key, value)
+                
+                # Copy module-level *_to_value functions
+                for attr_name in dir(original_module):
+                    if attr_name.endswith('_to_value') and not attr_name.startswith('_'):
+                        attr_value = getattr(original_module, attr_name)
+                        if callable(attr_value):
+                            setattr(self, attr_name, attr_value)
             
             def task_method(self, variables, task_folder, log_file):
                 return self.runner.task_method(variables, task_folder, log_file)
@@ -515,7 +528,8 @@ def worker_main_from_file(worker_id, config_file_path, results_path):
                 if hasattr(self.runner, 'on_hierarchical_unload'):
                     return self.runner.on_hierarchical_unload(hierarchical_values, worker_id)
         
-        config_module = ModuleWrapper(runner_instance)
+        original_config_module = config_module  # Save reference to original module
+        config_module = ModuleWrapper(runner_instance, original_config_module)
         print(f"DEBUG: Worker {worker_id} using ModuleWrapper for class-based runner", flush=True)
     else:
         print(f"DEBUG: Worker {worker_id} using config module directly", flush=True)
