@@ -62,7 +62,9 @@ class Worker:
     def _debug_print(self, message: str):
         """Print debug message if debug mode is enabled."""
         if self.debug:
-            print(message, flush=True)
+            import time
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"[{timestamp}] {message}", flush=True)
     
     @staticmethod
     def _get_python_executable() -> str:
@@ -211,6 +213,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             if state_changed:
                 self._debug_print(f"Worker {self.worker_id} hierarchical state changed to: {task.hierarchical_key}")
             
+            import time
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"[{timestamp}] Sending task ID '{task.task_id}' to worker {self.worker_id}")
             self._debug_print(f"Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
             # Send task ID to worker via stdin
@@ -263,6 +268,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                             line = self.process.stdout.readline().strip()
                             if line == "TASK_RECEIVED":
                                 ack_received = True
+                                import time
+                                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                                print(f"[{timestamp}] Worker {self.worker_id} acknowledged task {task.task_id}")
                                 self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
                                 # Check if it's a task result with ID
@@ -272,7 +280,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 elif line.startswith("WORKER_DEBUG:"):
                                     # Handle debug messages from worker - print directly to main console
                                     debug_msg = line[13:]  # Remove "WORKER_DEBUG:" prefix
-                                    print(f"[Worker {self.worker_id}] {debug_msg}")
+                                    import time
+                                    timestamp = time.strftime("%H:%M:%S", time.localtime())
+                                    print(f"[{timestamp}] [Worker {self.worker_id}] {debug_msg}")
                                 elif "DEBUG:" not in line and line != "WORKER_READY":
                                     # Log non-debug output for debugging
                                     self._debug_print(f"Worker {self.worker_id} output: {line}")
@@ -333,6 +343,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     result_task_id, result_type = result_content.split(":", 1)
                     if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                         success = result_type == "TASK_SUCCESS_RESPONSE"
+                        import time
+                        timestamp = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"[{timestamp}] Worker {self.worker_id} found result file for {task_id}: {result_type}")
                         self._debug_print(f"Worker {self.worker_id} found result file for {task_id}: {result_type}")
                         
                         # Remove the result file after reading
@@ -433,7 +446,9 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         elif result_line.startswith("WORKER_DEBUG:"):
                             # Handle debug messages from worker - print directly to main console
                             debug_msg = result_line[13:]  # Remove "WORKER_DEBUG:" prefix
-                            print(f"[Worker {self.worker_id}] {debug_msg}")
+                            import time
+                            timestamp = time.strftime("%H:%M:%S", time.localtime())
+                            print(f"[{timestamp}] [Worker {self.worker_id}] {debug_msg}")
                         elif "DEBUG:" not in result_line:
                             # Non-debug output that's not a result
                             self._debug_print(f"Worker {self.worker_id} output: {result_line}")
