@@ -216,7 +216,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             import time
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"[{timestamp}] Sending task ID '{task.task_id}' to worker {self.worker_id}")
-            self._debug_print(f"Sending task ID '{task.task_id}' to worker {self.worker_id}")
             
             # Send task ID to worker via stdin
             if self.process.stdin and not self.process.stdin.closed:
@@ -271,7 +270,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 import time
                                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                                 print(f"[{timestamp}] Worker {self.worker_id} acknowledged task {task.task_id}")
-                                self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
                                 # Check if it's a task result with ID
                                 if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
@@ -346,7 +344,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         import time
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
                         print(f"[{timestamp}] Worker {self.worker_id} found result file for {task_id}: {result_type}")
-                        self._debug_print(f"Worker {self.worker_id} found result file for {task_id}: {result_type}")
                         
                         # Remove the result file after reading
                         try:
