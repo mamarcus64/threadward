@@ -165,6 +165,7 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                 
                 # Print variables to log
                 print(converted_variables)
+                print("test print")
                 print()  # Add blank line for readability
                 
                 # Call the main task method
