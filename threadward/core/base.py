@@ -26,7 +26,7 @@ class Threadward(ABC):
             "INCLUDE_GPUS": None,
             "FAILURE_HANDLING": "PRINT_FAILURE_AND_CONTINUE",
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
-            "EXISTING_FOLDER_HANDLING": "SKIP",
+            "EXISTING_FOLDER_HANDLING": "VERIFY",
             "ENABLE_HIERARCHICAL_RETENTION": True,
             "HIERARCHY_DEPTH": None,  # None means auto-detect (all vars except last)
             "TASK_TIMEOUT": 30  # Timeout in seconds for task completion, -1 for no timeout

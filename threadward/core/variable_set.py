@@ -4,6 +4,36 @@ import itertools
 from typing import List, Dict, Any, Optional, Callable, Union
 
 
+def _validate_json_type(value: Any, path: str = "") -> None:
+    """Recursively validate that a value is JSON-serializable.
+    
+    Args:
+        value: The value to validate
+        path: Current path in the data structure (for error messages)
+        
+    Raises:
+        ValueError: If the value contains non-JSON-serializable types
+    """
+    # JSON-compatible types: str, int, float, bool, list, dict, None
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            _validate_json_type(item, f"{path}[{i}]")
+    elif isinstance(value, dict):
+        for key, val in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"Dictionary keys must be strings. Found {type(key).__name__} at {path}.{key}. "
+                               "Only JSON-compatible types are allowed: str, int, float, bool, list, dict, None. "
+                               "Use the to_value parameter for other types.")
+            _validate_json_type(val, f"{path}.{key}")
+    else:
+        type_name = type(value).__name__
+        raise ValueError(f"Type {type_name} at {path} is not JSON-compatible. "
+                        "Only JSON-compatible types are allowed: str, int, float, bool, list, dict, None. "
+                        "Use the to_value parameter for other types.")
+
+
 class VariableSet:
     """Manages hierarchical variable combinations for task generation."""
     
@@ -12,7 +42,7 @@ class VariableSet:
         self.variables = []  # List of variable definitions in order
         self.variable_converters = {}  # Functions to convert string values
         
-    def add_variable(self, name: str, values: List[Union[str, int, float]], 
+    def add_variable(self, name: str, values: List[Any], 
                      nicknames: Optional[List[str]] = None,
                      interaction: str = "cartesian",
                      exceptions: Optional[Dict[str, List[str]]] = None,
@@ -21,28 +51,32 @@ class VariableSet:
         
         Args:
             name: Variable name
-            values: List of possible values (will be converted to strings)
+            values: List of possible values (must be JSON-compatible types)
             nicknames: Optional list of nicknames for values (for folder naming)
             interaction: How this variable interacts with previous ones ('cartesian')
             exceptions: Dict mapping parent values to restricted child values
             to_value: Optional function to convert string value to object (takes string_value, nickname)
         """
-        # Convert all values to strings
-        str_values = [str(v) for v in values]
+        # Validate that all values are JSON-compatible types
+        for i, value in enumerate(values):
+            _validate_json_type(value, f"values[{i}]")
         
-        # Use values as nicknames if not provided
+        # Keep original values (don't convert to strings)
+        original_values = values[:]
+        
+        # Use string representation of values as nicknames if not provided
         if nicknames is None:
-            nicknames = str_values
+            nicknames = [str(v) for v in original_values]
         else:
             nicknames = [str(n) for n in nicknames]
             
-        if len(nicknames) != len(str_values):
+        if len(nicknames) != len(original_values):
             raise ValueError(f"Number of nicknames ({len(nicknames)}) must match "
-                           f"number of values ({len(str_values)}) for variable '{name}'")
+                           f"number of values ({len(original_values)}) for variable '{name}'")
         
         variable_def = {
             "name": name,
-            "values": str_values,
+            "values": original_values,  # Store original types, not strings
             "nicknames": nicknames,
             "interaction": interaction,
             "exceptions": exceptions or {},
@@ -54,6 +88,15 @@ class VariableSet:
         # Store converter if provided (for backward compatibility and new to_value parameter)
         if to_value:
             self.variable_converters[name] = to_value
+    
+    def add_converter(self, variable_name: str, converter_func: Callable[[str, str], Any]) -> None:
+        """Add a converter function for a variable (backward compatibility method).
+        
+        Args:
+            variable_name: Name of the variable
+            converter_func: Function to convert string value to object (takes string_value, nickname)
+        """
+        self.variable_converters[variable_name] = converter_func
     
     
     def generate_combinations(self) -> List[Dict[str, Any]]:
@@ -124,20 +167,22 @@ class VariableSet:
         # Check if any parent variable has exceptions for this variable
         for parent_var_name, parent_data in current_combo.items():
             parent_value = parent_data["value"]
-            if parent_value in exceptions:
+            # Use string representation for exception lookup (backward compatibility)
+            parent_value_str = str(parent_value)
+            if parent_value_str in exceptions:
                 # Return only the allowed values for this parent
-                return exceptions[parent_value]
+                return exceptions[parent_value_str]
         
         return all_values
     
     def _convert_combination(self, combo: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
-        """Convert a combination to final format (keeping string values for main process)."""
+        """Convert a combination to final format (preserving original types)."""
         result = {}
         
         for var_name, var_data in combo.items():
-            string_value = var_data["value"]
-            # Always use string value in main process - conversion happens in workers
-            result[var_name] = string_value
+            original_value = var_data["value"]
+            # Use original value (already JSON-compatible)
+            result[var_name] = original_value
         
         # Add metadata
         result["_task_folder"] = self._generate_task_folder(combo, base_path=getattr(self, '_base_path', None))

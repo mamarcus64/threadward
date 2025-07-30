@@ -265,7 +265,8 @@ Your configuration file supports the following options:
   - `"VARIABLE_UNDERSCORE"`: Single folder with underscore-separated names
 
 - `EXISTING_FOLDER_HANDLING`: What to do with existing task folders
-  - `"SKIP"` (default): Skip tasks with existing folders
+  - `"VERIFY"` (default): Run `verify_task_success` method to check if tasks are complete - skip verified tasks, rerun failed ones
+  - `"SKIP"`: Skip tasks with existing folders
   - `"OVERWRITE"`: Delete existing folders and rerun
   - `"QUIT"`: Stop execution if any folders exist
 

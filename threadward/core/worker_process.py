@@ -127,7 +127,7 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
         converted_variables = convert_variables_func(variables, nicknames)
     else:
         # Create namespace with original values and nicknames even when no conversion needed
-        original_values = dict(variables)  # Variables are already strings
+        original_values = dict(variables)  # Variables may be any JSON type
         final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
         converted_variables = VariableNamespace(variables, original_values, final_nicknames)
     
@@ -221,35 +221,37 @@ def worker_main(worker_id, config_module, results_path):
     
     # Function to convert variables using to_value functions
     def convert_variables(variables, nicknames=None):
-        """Convert string variables to objects using to_value functions."""
+        """Convert variables to objects using to_value functions if needed."""
         converted = {}
         original_values = {}
         final_nicknames = {}
         
-        for var_name, string_value in variables.items():
-            # Store original string value
-            original_values[var_name] = string_value
+        for var_name, value in variables.items():
+            # Store original value (may be any JSON type)
+            original_values[var_name] = value
             
-            # Store nickname (use provided nickname or string value as fallback)
-            final_nicknames[var_name] = nicknames.get(var_name, string_value) if nicknames else string_value
+            # Store nickname (use provided nickname or string representation as fallback)
+            final_nicknames[var_name] = nicknames.get(var_name, str(value)) if nicknames else str(value)
             
             if var_name in converter_info:
-                # This variable has a converter
+                # This variable has a converter - pass string representation to converter
                 converter_func_name = converter_info[var_name]
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
                     try:
+                        # Convert value to string for the converter function (backward compatibility)
+                        string_value = str(value)
                         converted[var_name] = converter_func(string_value, nickname)
                     except Exception as e:
                         print(f"Warning: Failed to convert {var_name}: {e}", flush=True)
-                        converted[var_name] = string_value
+                        converted[var_name] = value
                 else:
-                    # No converter function found, use string value
-                    converted[var_name] = string_value
+                    # No converter function found, use original value
+                    converted[var_name] = value
             else:
-                # No converter needed, use string value
-                converted[var_name] = string_value
+                # No converter needed, use original value with preserved type
+                converted[var_name] = value
         
         return VariableNamespace(converted, original_values, final_nicknames)
     

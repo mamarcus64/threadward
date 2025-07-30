@@ -74,7 +74,7 @@ class Threadward:
             "OUTPUT_MODE": "LOG_FILE_ONLY",
             "FAILURE_HANDLING": "PRINT_FAILURE_AND_CONTINUE",
             "TASK_FOLDER_LOCATION": "VARIABLE_SUBFOLDER",
-            "EXISTING_FOLDER_HANDLING": "SKIP",
+            "EXISTING_FOLDER_HANDLING": "VERIFY",
             "ENABLE_HIERARCHICAL_RETENTION": True,
             "HIERARCHY_DEPTH": None
         }
@@ -134,6 +134,40 @@ class Threadward:
             if len(existing_folders) > 10:
                 print(f"  ... and {len(existing_folders) - 10} more")
             return False
+            
+        elif existing_folder_handling == "VERIFY":
+            print(f"Found {len(existing_folders)} existing task folders - verifying completion")
+            remaining_tasks = []
+            verified_count = 0
+            
+            for task in self.tasks:
+                if os.path.exists(task.task_folder):
+                    # Check if task has verify_task_success method and call it
+                    if hasattr(self.config_module, 'verify_task_success'):
+                        log_file = os.path.join(task.task_folder, "log.txt")
+                        try:
+                            success = self.config_module.verify_task_success(
+                                task.variables, task.task_folder, log_file
+                            )
+                            if success:
+                                print(f"Task verified as successful: {task.task_folder}")
+                                self.skipped_tasks.append(task)
+                                verified_count += 1
+                            else:
+                                print(f"Task verification failed: {task.task_folder}")
+                                remaining_tasks.append(task)
+                        except Exception as e:
+                            print(f"Error verifying task {task.task_folder}: {e}")
+                            remaining_tasks.append(task)
+                    else:
+                        print(f"Warning: verify_task_success method not found, skipping task: {task.task_folder}")
+                        self.skipped_tasks.append(task)
+                else:
+                    remaining_tasks.append(task)
+            
+            self.tasks = remaining_tasks
+            print(f"Verified {verified_count} tasks as completed, {len(self.tasks)} tasks remaining")
+            return True
             
         else:
             print(f"Warning: Unknown EXISTING_FOLDER_HANDLING value: {existing_folder_handling}")
