@@ -229,12 +229,16 @@ def worker_main(worker_id, config_module, results_path):
     # Function to convert variables using to_value functions
     def convert_variables(variables, nicknames=None):
         """Convert variables to objects using to_value functions if needed."""
+        print(f"DEBUG: convert_variables called", flush=True)
+        print(f"DEBUG: raw variables dict keys: {list(variables.keys())}", flush=True)
+        
         converted = {}
         original_values = {}
         final_nicknames = {}
         
         # Check if _has_converters is in variables (per-task converter info)
         has_converters = variables.get('_has_converters', {})
+        print(f"DEBUG: has_converters: {has_converters}", flush=True)
         
         for var_name, value in variables.items():
             # Skip metadata fields
@@ -248,15 +252,19 @@ def worker_main(worker_id, config_module, results_path):
             final_nicknames[var_name] = nicknames.get(var_name, str(value)) if nicknames else str(value)
             
             # Check if this variable has a converter
+            print(f"DEBUG: Checking {var_name}, has_converter: {has_converters.get(var_name, False)}", flush=True)
             if has_converters.get(var_name, False):
                 # This variable has a converter - construct function name
                 converter_func_name = var_name + "_to_value"
+                print(f"DEBUG: Looking for function '{converter_func_name}' on config_module", flush=True)
+                print(f"DEBUG: hasattr result: {hasattr(config_module, converter_func_name)}", flush=True)
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
                     try:
                         # Convert value to string for the converter function (backward compatibility)
                         string_value = str(value)
+                        print(f"DEBUG: About to call {converter_func_name}('{string_value}', '{nickname}')", flush=True)
                         converted[var_name] = converter_func(string_value, nickname)
                         print(f"Successfully converted {var_name} from '{string_value}' to {type(converted[var_name])}", flush=True)
                     except Exception as e:
@@ -272,7 +280,9 @@ def worker_main(worker_id, config_module, results_path):
                 # No converter needed, use original value with preserved type
                 converted[var_name] = value
         
-        return VariableNamespace(converted, original_values, final_nicknames)
+        result = VariableNamespace(converted, original_values, final_nicknames)
+        print(f"DEBUG: Returning VariableNamespace: {result}", flush=True)
+        return result
     
     # Track hierarchical state
     current_hierarchical_key = ""
