@@ -126,9 +126,12 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
     print(f"DEBUG: execute_task log_file: {log_file}", flush=True)
     
     # Convert variables using to_value functions if converter function provided
+    print(f"DEBUG: convert_variables_func is: {convert_variables_func}", flush=True)
     if convert_variables_func:
+        print(f"DEBUG: Using convert_variables_func", flush=True)
         converted_variables = convert_variables_func(variables, nicknames)
     else:
+        print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace", flush=True)
         # Create namespace with original values and nicknames even when no conversion needed
         original_values = dict(variables)  # Variables may be any JSON type
         final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
