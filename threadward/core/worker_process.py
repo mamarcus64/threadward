@@ -286,7 +286,9 @@ def worker_main(worker_id, config_module, results_path):
                             converted[var_name] = conversion_cache[var_name][1]
                         else:
                             print(f"Converting variable {var_name} with value '{string_value}' via converter function", flush=True)
+                            print(f"WORKER_DEBUG:Starting conversion of {var_name}={string_value}", flush=True)
                             converted_value = converter_func(string_value, nickname)
+                            print(f"WORKER_DEBUG:Finished conversion of {var_name}={string_value}", flush=True)
                             # Store in cache, replacing any previous value for this variable
                             conversion_cache[var_name] = (string_value, converted_value)
                             converted[var_name] = converted_value
@@ -448,6 +450,7 @@ def worker_main(worker_id, config_module, results_path):
                         f.flush()
                         os.fsync(f.fileno())
                     print(f"DEBUG: Worker {worker_id} wrote result to {result_file}", flush=True)
+                    print(f"WORKER_DEBUG:Task {task_data['task_id']} completed, result file created", flush=True)
                 except Exception as e:
                     print(f"ERROR: Worker {worker_id} failed to write result file: {e}", flush=True)
                     # Fallback to stdout

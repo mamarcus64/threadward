@@ -269,6 +269,10 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                                     self.output_buffer.append(line)
                                     self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
+                                elif line.startswith("WORKER_DEBUG:"):
+                                    # Handle debug messages from worker - print directly to main console
+                                    debug_msg = line[13:]  # Remove "WORKER_DEBUG:" prefix
+                                    print(f"[Worker {self.worker_id}] {debug_msg}")
                                 elif "DEBUG:" not in line and line != "WORKER_READY":
                                     # Log non-debug output for debugging
                                     self._debug_print(f"Worker {self.worker_id} output: {line}")
@@ -426,6 +430,10 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 # Result for a different task - buffer it
                                 self.output_buffer.append(result_line)
                                 self._debug_print(f"Worker {self.worker_id} buffered result for different task: {result_line}")
+                        elif result_line.startswith("WORKER_DEBUG:"):
+                            # Handle debug messages from worker - print directly to main console
+                            debug_msg = result_line[13:]  # Remove "WORKER_DEBUG:" prefix
+                            print(f"[Worker {self.worker_id}] {debug_msg}")
                         elif "DEBUG:" not in result_line:
                             # Non-debug output that's not a result
                             self._debug_print(f"Worker {self.worker_id} output: {result_line}")
