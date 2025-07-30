@@ -244,10 +244,12 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
             # Wait for acknowledgment from worker that task was received
             ack_received = False
-            ack_timeout = 5  # Wait up to 5 seconds for acknowledgment
             start_time = time.time()
+            last_warning_time = start_time
+            warning_interval = 60  # Start with 1 minute intervals
+            warning_count = 0
             
-            while not ack_received and time.time() - start_time < ack_timeout:
+            while not ack_received:
                 if self.process.poll() is not None:
                     # Process died
                     return False
@@ -272,12 +274,20 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                     self._debug_print(f"Worker {self.worker_id} output: {line}")
                         except:
                             pass
+                
+                # Check if we should print a warning
+                current_time = time.time()
+                if current_time - last_warning_time >= warning_interval:
+                    elapsed_minutes = int((current_time - start_time) / 60)
+                    print(f"No tasks have been assigned to Worker {self.worker_id} yet. This is likely because the worker is taking a long time converting a variable (such as loading a model). If this is not the case, re-run with the --debug flag and check the first task logs. (Waiting {elapsed_minutes} minutes)")
+                    last_warning_time = current_time
+                    warning_count += 1
+                    # Linear backoff: increase interval by 1 minute each time
+                    warning_interval = 60 * (warning_count + 1)
                 else:
                     time.sleep(0.1)
             
-            if not ack_received:
-                print(f"ERROR: Worker {self.worker_id} did not acknowledge task {task.task_id}")
-                return False
+            # ack_received is guaranteed to be True when we exit the while loop
             
             self.current_task = task
             self.status = "busy"

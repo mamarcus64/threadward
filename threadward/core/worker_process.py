@@ -145,17 +145,10 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                     sys.stdout = TeeOutput(old_stdout, log)
                     sys.stderr = TeeOutput(old_stderr, log)
                 
-                print(f"DEBUG: execute_task called for task_folder: {task_folder}")
-                print(f"DEBUG: execute_task log_file: {log_file}")
-                
                 # Convert variables using to_value functions if converter function provided
-                print(f"DEBUG: convert_variables_func is: {convert_variables_func}")
                 if convert_variables_func:
-                    print(f"DEBUG: Using convert_variables_func")
-                    print(f"DEBUG: variables keys before conversion: {list(variables.keys())}")
                     converted_variables = convert_variables_func(variables, nicknames)
                 else:
-                    print(f"DEBUG: No convert_variables_func, creating basic VariableNamespace")
                     # Create namespace with original values and nicknames even when no conversion needed
                     original_values = dict(variables)  # Variables may be any JSON type
                     final_nicknames = nicknames or {var: str(val) for var, val in variables.items()}
@@ -167,9 +160,6 @@ def execute_task(task_spec, task_data, convert_variables_func=None):
                 
                 # Print variables to log
                 print(converted_variables)
-                print("test print")
-                print(f"DEBUG: converted_variables type: {type(converted_variables)}")
-                print(f"DEBUG: converted benchmark type: {type(converted_variables._variables.get('benchmark', 'NOT_FOUND'))}")
                 print()  # Add blank line for readability
                 
                 # Call the main task method
@@ -234,16 +224,12 @@ def worker_main(worker_id, config_module, results_path):
     # Function to convert variables using to_value functions
     def convert_variables(variables, nicknames=None):
         """Convert variables to objects using to_value functions if needed."""
-        print(f"DEBUG: convert_variables called")
-        print(f"DEBUG: raw variables dict keys: {list(variables.keys())}")
-        
         converted = {}
         original_values = {}
         final_nicknames = {}
         
         # Check if _has_converters is in variables (per-task converter info)
         has_converters = variables.get('_has_converters', {})
-        print(f"DEBUG: has_converters: {has_converters}")
         
         for var_name, value in variables.items():
             # Skip metadata fields
@@ -257,27 +243,17 @@ def worker_main(worker_id, config_module, results_path):
             final_nicknames[var_name] = nicknames.get(var_name, str(value)) if nicknames else str(value)
             
             # Check if this variable has a converter
-            print(f"DEBUG: Checking {var_name}, has_converter: {has_converters.get(var_name, False)}", flush=True)
             if has_converters.get(var_name, False):
                 # This variable has a converter - construct function name
                 converter_func_name = var_name + "_to_value"
-                print(f"DEBUG: Looking for function '{converter_func_name}' on config_module", flush=True)
-                print(f"DEBUG: hasattr result: {hasattr(config_module, converter_func_name)}", flush=True)
-                # Debug: show all available attributes on config_module
-                available_attrs = [attr for attr in dir(config_module) if not attr.startswith('_')]
-                print(f"DEBUG: Available attributes on config_module: {available_attrs}")
-                # Check specifically for functions ending in _to_value
-                to_value_funcs = [attr for attr in available_attrs if attr.endswith('_to_value')]
-                print(f"DEBUG: Available *_to_value functions: {to_value_funcs}")
                 if hasattr(config_module, converter_func_name):
                     converter_func = getattr(config_module, converter_func_name)
                     nickname = final_nicknames[var_name]
                     try:
                         # Convert value to string for the converter function (backward compatibility)
                         string_value = str(value)
-                        print(f"DEBUG: About to call {converter_func_name}('{string_value}', '{nickname}')", flush=True)
+                        print(f"Converting variable {var_name} with value '{string_value}' via function {converter_func_name}", flush=True)
                         converted[var_name] = converter_func(string_value, nickname)
-                        print(f"Successfully converted {var_name} from '{string_value}' to {type(converted[var_name])}", flush=True)
                     except Exception as e:
                         print(f"Error: Failed to convert {var_name} using {converter_func_name}: {e}", flush=True)
                         import traceback
@@ -292,7 +268,6 @@ def worker_main(worker_id, config_module, results_path):
                 converted[var_name] = value
         
         result = VariableNamespace(converted, original_values, final_nicknames)
-        print(f"DEBUG: Returning VariableNamespace: {result}", flush=True)
         return result
     
     # Track hierarchical state
