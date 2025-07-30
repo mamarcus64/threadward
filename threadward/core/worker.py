@@ -246,7 +246,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             ack_received = False
             start_time = time.time()
             last_warning_time = start_time
-            warning_interval = 60  # Start with 1 minute intervals
+            warning_interval = 20  # Start with 20 second intervals
             warning_count = 0
             
             while not ack_received:
@@ -279,11 +279,16 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 current_time = time.time()
                 if current_time - last_warning_time >= warning_interval:
                     elapsed_minutes = int((current_time - start_time) / 60)
-                    print(f"No tasks have been assigned to Worker {self.worker_id} yet. This is likely because the worker is taking a long time converting a variable (such as loading a model). If this is not the case, re-run with the --debug flag and check the first task logs. (Waiting {elapsed_minutes} minutes)")
+                    if self.current_task is None:
+                        # Worker is not busy, so it should acknowledge quickly
+                        print(f"Worker {self.worker_id} has not acknowledged task {task.task_id} yet. This is likely because the worker is taking a long time converting a variable (such as loading a model). If this is not the case, re-run with the --debug flag and check the first task logs. (Waiting {elapsed_minutes} minutes)")
+                    else:
+                        # Worker is busy with another task, this is expected
+                        print(f"Worker {self.worker_id} is busy with task {self.current_task.task_id}, waiting to assign task {task.task_id}. (Waiting {elapsed_minutes} minutes)")
                     last_warning_time = current_time
                     warning_count += 1
-                    # Linear backoff: increase interval by 1 minute each time
-                    warning_interval = 60 * (warning_count + 1)
+                    # Linear backoff: increase interval by 20 seconds each time
+                    warning_interval = 20 * (warning_count + 1)
                 else:
                     time.sleep(0.1)
             
