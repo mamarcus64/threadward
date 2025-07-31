@@ -245,10 +245,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             
             # Wait for acknowledgment from worker that task was received
             ack_received = False
-            start_time = time.time()
-            last_warning_time = start_time
-            warning_interval = 20  # Start with 20 second intervals
-            warning_count = 0
+
+            import select
             
             while not ack_received:
                 if self.process.poll() is not None:
@@ -256,31 +254,31 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     return False
                 
                 # Try to read acknowledgment
-                import select
-                if hasattr(select, 'select'):
-                    ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
-                    if ready_to_read:
-                        try:
-                            line = self.process.stdout.readline().strip()
-                            if line == "TASK_RECEIVED":
-                                ack_received = True
-                                self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
-                            elif line:
-                                # Check if it's a task result with ID
-                                if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
-                                    self.output_buffer.append(line)
-                                    self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
-                                elif line.startswith("WORKER_DEBUG:") or line.startswith("DEBUG:"):
-                                    # Handle debug messages from worker - print directly to main console
-                                    debug_msg = line.replace("WORKER_DEBUG:", '').replace("DEBUG:", '')
-                                    self._debug_print(f"[Worker {self.worker_id}] {debug_msg}")
-                                elif "DEBUG:" not in line and line != "WORKER_READY":
-                                    # Log non-debug output for debugging
-                                    self._debug_print(f"Worker {self.worker_id} output: {line}")
-                        except Exception as e:
-                            self._debug_print(f"Worker {self.worker_id} error reading stdout: {e}")
+                ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
+                if ready_to_read:
+                    while True:
+                        line = self.process.stdout.readline()
+                        if not line:
+                            break
+                        line = line.strip()
+
+                        if line == "TASK_RECEIVED":
+                            ack_received = True
+                            self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
+                        elif line:
+                            # Check if it's a task result with ID
+                            if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                self.output_buffer.append(line)
+                                self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
+                            elif line.startswith("WORKER_DEBUG:") or line.startswith("DEBUG:"):
+                                # Handle debug messages from worker - print directly to main console
+                                debug_msg = line.replace("WORKER_DEBUG:", '').replace("DEBUG:", '')
+                                self._debug_print(f"[Worker {self.worker_id}] {debug_msg}")
+                            elif "DEBUG:" not in line and line != "WORKER_READY":
+                                # Log non-debug output for debugging
+                                self._debug_print(f"Worker {self.worker_id} output: {line}")
                 
-                time.sleep(0.1)
+                    time.sleep(0.1)
             
             # ack_received is guaranteed to be True when we exit the while loop
             
@@ -671,4 +669,3 @@ worker_main_from_file(worker_id, config_file_path, results_path)
             self.current_hierarchical_values = task.get_hierarchical_values()
             self.hierarchical_load_count += 1
             return True
-        return False
