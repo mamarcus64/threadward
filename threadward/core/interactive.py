@@ -3,6 +3,7 @@
 import threading
 import sys
 import time
+from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -83,21 +84,31 @@ class InteractiveHandler:
         """
         stats = self.threadward.get_stats()
         
+        # Get current time for display
+        current_time_str = datetime.fromtimestamp(stats['current_time']).strftime("%m/%d/%y at %I:%M %p")
+        
         print("\n" + "="*60)
-        print("THREADWARD EXECUTION STATUS")
+        print(f"THREADWARD EXECUTION STATUS - {current_time_str}")
         print("="*60)
         
         # Time information
         elapsed = stats['elapsed_time']
         hours, remainder = divmod(int(elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
-        print(f"Elapsed Time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+        
+        # Format start time
+        start_time_str = datetime.fromtimestamp(stats['start_time']).strftime("%m/%d/%y at %I:%M %p")
+        print(f"Elapsed Time: {hours:02d}:{minutes:02d}:{seconds:02d} (Started {start_time_str})")
         
         if stats['estimated_remaining_time'] > 0:
             remaining = stats['estimated_remaining_time']
             hours, remainder = divmod(int(remaining), 3600)
             minutes, seconds = divmod(remainder, 60)
-            print(f"Estimated Remaining: {hours:02d}:{minutes:02d}:{seconds:02d}")
+            
+            # Calculate estimated completion time
+            est_completion_time = stats['current_time'] + stats['estimated_remaining_time']
+            est_completion_str = datetime.fromtimestamp(est_completion_time).strftime("%m/%d/%y at %I:%M %p")
+            print(f"Estimated Remaining: {hours:02d}:{minutes:02d}:{seconds:02d} (Est. {est_completion_str})")
         
         print(f"Average Time per Task: {stats['avg_time_per_task']:.2f}s")
         

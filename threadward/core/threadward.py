@@ -445,6 +445,10 @@ class Threadward:
             # Call after_all_tasks
             self._call_hook("after_all_tasks")
             
+            # Print final display before completion message
+            if self.interactive_handler:
+                self.interactive_handler.show_stats()
+            
             self.is_running = False
             print("Threadward execution completed.")
     
@@ -596,6 +600,8 @@ class Threadward:
         
         return {
             "elapsed_time": elapsed_time,
+            "start_time": self.start_time,
+            "current_time": current_time,
             "avg_time_per_task": avg_time_per_task,
             "estimated_remaining_time": estimated_remaining_time,
             "tasks": {
