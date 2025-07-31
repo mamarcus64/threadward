@@ -585,11 +585,11 @@ class Threadward:
         
         # Total tasks includes all tasks (skipped and non-skipped)
         total_all_tasks = len(self.all_tasks)
-        non_skipped_total = len(self.tasks) + len(self.succeeded_tasks) + len(self.failed_tasks)
         skipped_count = len(self.skipped_tasks)
         succeeded_count = len(self.succeeded_tasks)
         failed_count = len(self.failed_tasks)
-        remaining_count = len(self.tasks) - succeeded_count - failed_count
+        remaining_count = self.task_queue.qsize()
+        non_skipped_total = succeeded_count + failed_count + remaining_count
         
         avg_time_per_task = elapsed_time / max(succeeded_count + failed_count, 1)
         estimated_remaining_time = avg_time_per_task * remaining_count if remaining_count > 0 else 0
