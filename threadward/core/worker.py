@@ -277,6 +277,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                             elif "DEBUG:" not in line and line != "WORKER_READY":
                                 # Log non-debug output for debugging
                                 self._debug_print(f"Worker {self.worker_id} output: {line}")
+                            if not select.select([self.process.stdout], [], [], 0)[0]:
+                                break
                 
                     time.sleep(0.1)
             
