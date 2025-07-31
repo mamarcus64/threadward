@@ -367,11 +367,11 @@ def worker_main(worker_id, config_module, results_path):
                 break
             
             # Find the task
-            print(f"DEBUG: Worker {worker_id} received task ID: '{line}'", flush=True)
+            # print(f"DEBUG: Worker {worker_id} received task ID: '{line}'", flush=True)
             
             # Send acknowledgment that we received the task
             print("TASK_RECEIVED", flush=True)
-            # sys.stdout.flush()
+            sys.stdout.flush()
             
             task_data = None
             for task in all_tasks_data:
