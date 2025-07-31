@@ -281,6 +281,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     time.sleep(0.1)
             
             # ack_received is guaranteed to be True when we exit the while loop
+            print('out da trenches')
             
             self.current_task = task
             self.status = "busy"
