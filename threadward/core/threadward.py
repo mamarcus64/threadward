@@ -298,30 +298,67 @@ class Threadward:
                         if include_gpus is None or i in include_gpus:
                             available_gpus.append(i)
                 
-                # Check if we have enough GPUs
-                total_gpus_needed = num_workers * num_gpus_per_worker
-                if len(available_gpus) < total_gpus_needed:
-                    print(f"Error: Need {total_gpus_needed} GPUs but only {len(available_gpus)} available")
-                    return False
+                # Handle fractional GPU assignments
+                if num_gpus_per_worker < 1:
+                    # Check if workers can share GPUs evenly
+                    workers_per_gpu = 1 / num_gpus_per_worker
+                    epsilon = 1e-9
+                    
+                    # Check if workers_per_gpu is close to an integer
+                    if abs(workers_per_gpu - round(workers_per_gpu)) > epsilon:
+                        print(f"Error: NUM_GPUS_PER_WORKER={num_gpus_per_worker} doesn't divide evenly. "
+                              f"Each GPU would need to be shared by {workers_per_gpu} workers.")
+                        return False
+                    
+                    workers_per_gpu = int(round(workers_per_gpu))
+                    
+                    # Check if we have enough GPUs for the sharing pattern
+                    min_gpus_needed = (num_workers + workers_per_gpu - 1) // workers_per_gpu  # Ceiling division
+                    if len(available_gpus) < min_gpus_needed:
+                        print(f"Error: Need at least {min_gpus_needed} GPUs to assign {num_gpus_per_worker} GPUs "
+                              f"per worker across {num_workers} workers, but only {len(available_gpus)} available")
+                        return False
+                else:
+                    # Check if we have enough GPUs for full assignment
+                    total_gpus_needed = num_workers * num_gpus_per_worker
+                    if len(available_gpus) < total_gpus_needed:
+                        print(f"Error: Need {total_gpus_needed} GPUs but only {len(available_gpus)} available")
+                        return False
+            
+            # Detect conda environment
+            conda_env = os.environ.get("CONDA_DEFAULT_ENV")
             
             # Create workers
             self.workers = []
-            gpu_index = 0
             
-            for worker_id in range(num_workers):
-                # Assign GPUs to this worker
-                worker_gpus = []
-                if num_gpus_per_worker > 0:
-                    for _ in range(int(num_gpus_per_worker)):
-                        if gpu_index < len(available_gpus):
-                            worker_gpus.append(available_gpus[gpu_index])
-                            gpu_index += 1
-                
-                # Detect conda environment
-                conda_env = os.environ.get("CONDA_DEFAULT_ENV")
-                
-                worker = Worker(worker_id, worker_gpus, conda_env, self.debug)
-                self.workers.append(worker)
+            if num_gpus_per_worker > 0:
+                if num_gpus_per_worker >= 1:
+                    # Original logic for >= 1 GPU per worker
+                    gpu_index = 0
+                    for worker_id in range(num_workers):
+                        worker_gpus = []
+                        for _ in range(int(num_gpus_per_worker)):
+                            if gpu_index < len(available_gpus):
+                                worker_gpus.append(available_gpus[gpu_index])
+                                gpu_index += 1
+                        worker = Worker(worker_id, worker_gpus, conda_env, self.debug)
+                        self.workers.append(worker)
+                else:
+                    # Fractional GPU assignment - share GPUs among workers
+                    workers_per_gpu = int(round(1 / num_gpus_per_worker))
+                    for worker_id in range(num_workers):
+                        # Assign this worker to a GPU based on round-robin
+                        gpu_idx = (worker_id // workers_per_gpu) % len(available_gpus)
+                        worker_gpus = [available_gpus[gpu_idx]]
+                        worker = Worker(worker_id, worker_gpus, conda_env, self.debug)
+                        self.workers.append(worker)
+                        if self.debug:
+                            print(f"Worker {worker_id} assigned GPU {available_gpus[gpu_idx]}")
+            else:
+                # No GPU assignment
+                for worker_id in range(num_workers):
+                    worker = Worker(worker_id, [], conda_env, self.debug)
+                    self.workers.append(worker)
             
             print(f"Created {len(self.workers)} workers")
             return True
