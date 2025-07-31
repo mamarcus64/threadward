@@ -371,7 +371,7 @@ def worker_main(worker_id, config_module, results_path):
             
             # Send acknowledgment that we received the task
             print("TASK_RECEIVED", flush=True)
-            sys.stdout.flush()
+            # sys.stdout.flush()
             
             task_data = None
             for task in all_tasks_data:
