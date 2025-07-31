@@ -265,7 +265,8 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         if line == "TASK_RECEIVED":
                             ack_received = True
                             self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
-                        elif line:
+                            break
+                        elif line == "WORKER_READY":
                             # Check if it's a task result with ID
                             if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                                 self.output_buffer.append(line)
@@ -278,8 +279,6 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                 # Log non-debug output for debugging
                                 self._debug_print(f"Worker {self.worker_id} output: {line}")
                 
-                        print(line)
-                        time.sleep(0.1)
             
             # ack_received is guaranteed to be True when we exit the while loop
             print('out da trenches')
