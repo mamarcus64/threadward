@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "task_id": "task_000000",
+      "variables": {
+        "test_var": "value1",
+        "_has_converters": {
+          "test_var": false
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/gpu_test_results/value1",
+      "log_file": "/Users/mjma/threadward_testing/threadward/gpu_test_results/value1/task_000000.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "test_var"
+        ]
+      }
+    },
+    {
+      "task_id": "task_000001",
+      "variables": {
+        "test_var": "value2",
+        "_has_converters": {
+          "test_var": false
+        }
+      },
+      "task_folder": "/Users/mjma/threadward_testing/threadward/gpu_test_results/value2",
+      "log_file": "/Users/mjma/threadward_testing/threadward/gpu_test_results/value2/task_000001.log",
+      "status": "pending",
+      "hierarchy_info": {
+        "depth": 0,
+        "hierarchical_variables": [],
+        "all_variables": [
+          "test_var"
+        ]
+      }
+    }
+  ],
+  "converter_info": {}
+}

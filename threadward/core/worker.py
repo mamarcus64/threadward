@@ -135,6 +135,9 @@ class Worker:
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.gpu_ids)) if self.gpu_ids else ""
         env["PYTHONUNBUFFERED"] = "1"
+        
+        # Debug print CUDA_VISIBLE_DEVICES assignment
+        self._debug_print(f"Worker {self.worker_id} CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']}")
 
         worker_entry = f"""
 import sys
