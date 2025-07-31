@@ -264,7 +264,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                             line = self.process.stdout.readline().strip()
                             if line == "TASK_RECEIVED":
                                 ack_received = True
-                                print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
+                                self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
                                 # Check if it's a task result with ID
                                 if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
