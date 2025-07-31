@@ -243,69 +243,41 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                 self._debug_print(f"Worker {self.worker_id} process poll: {self.process.poll()}")
                 return False
             
-            # ───────── WAIT FOR ACKNOWLEDGEMENT ─────────
+            # Wait for acknowledgment from worker that task was received
             ack_received = False
 
-            import os, fcntl, select, time
-
-            stdout     = self.process.stdout
-            stdout_fd  = stdout.fileno()
-
-            # Make the FD non-blocking exactly once
-            fl = fcntl.fcntl(stdout_fd, fcntl.F_GETFL)
-            if not fl & os.O_NONBLOCK:
-                fcntl.fcntl(stdout_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-
+            import select
+            
             while not ack_received:
-                # If the worker died, abort
                 if self.process.poll() is not None:
+                    # Process died
                     return False
-
-                # Wait up to 0.1 s for new bytes
-                ready, _, _ = select.select([stdout_fd], [], [], 0.1)
-
-                if ready:
-                    # ── DRAIN EVERY LINE ALREADY AVAILABLE ──
+                
+                # Try to read acknowledgment
+                ready_to_read, _, _ = select.select([self.process.stdout], [], [], 0.1)
+                if ready_to_read:
                     while True:
-                        try:
-                            line = stdout.readline()
-                        except BlockingIOError:
-                            # Nothing left in TextIOWrapper and pipe empty
+                        line = self.process.stdout.readline()
+                        if not line:
                             break
-
-                        if not line:              # EOF (shouldn’t happen here)
-                            break
-
                         line = line.strip()
 
                         if line == "TASK_RECEIVED":
                             ack_received = True
-                            self._debug_print(
-                                f"Worker {self.worker_id} acknowledged task {task.task_id}"
-                            )
-
-                        elif (
-                            ":" in line
-                            and line.split(":", 1)[1] in
-                            ("TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE")
-                        ):
-                            self.output_buffer.append(line)
-                            self._debug_print(
-                                f"Worker {self.worker_id} buffered task result: {line}"
-                            )
-
-                        elif line.startswith(("WORKER_DEBUG:", "DEBUG:")):
-                            debug_msg = line.replace("WORKER_DEBUG:", "").replace("DEBUG:", "")
-                            self._debug_print(f"[Worker {self.worker_id}] {debug_msg}")
-
-                        elif line and line != "WORKER_READY":
-                            self._debug_print(f"Worker {self.worker_id} output: {line}")
-
-                else:
-                    # Nothing to read right now – give up the CPU briefly
-                    time.sleep(0.1)
-            # ───────── END WAIT FOR ACKNOWLEDGEMENT ─────────
-
+                            self._debug_print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
+                            break
+                        elif line == "WORKER_READY":
+                            # Check if it's a task result with ID
+                            if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
+                                self.output_buffer.append(line)
+                                self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
+                            elif line.startswith("WORKER_DEBUG:") or line.startswith("DEBUG:"):
+                                # Handle debug messages from worker - print directly to main console
+                                debug_msg = line.replace("WORKER_DEBUG:", '').replace("DEBUG:", '')
+                                self._debug_print(f"[Worker {self.worker_id}] {debug_msg}")
+                            elif "DEBUG:" not in line and line != "WORKER_READY":
+                                # Log non-debug output for debugging
+                                self._debug_print(f"Worker {self.worker_id} output: {line}")
                 
             
             # ack_received is guaranteed to be True when we exit the while loop
