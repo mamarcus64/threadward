@@ -255,23 +255,23 @@ worker_main_from_file({self.worker_id!r}, {config_file_path!r}, {results_path!r}
                 _, rtype = content.split(":", 1)
                 success = rtype == "TASK_SUCCESS_RESPONSE"
                 os.remove(result_file)
-                self._finish_task(success)
-                return success
+                final_success = self._finish_task(success)
+                return final_success
 
         # 2. buffered early lines from other loops
         for i, line in enumerate(list(self.output_buffer)):
             if line.startswith(f"{task_id}:"):
                 self.output_buffer.pop(i)
                 success = line.endswith("TASK_SUCCESS_RESPONSE")
-                self._finish_task(success)
-                return success
+                final_success = self._finish_task(success)
+                return final_success
 
         # 3. new lines available right now
         for line in self._iter_stdout_nonblocking():
             if ":" in line and line.startswith(f"{task_id}:"):
                 success = line.endswith("TASK_SUCCESS_RESPONSE")
-                self._finish_task(success)
-                return success
+                final_success = self._finish_task(success)
+                return final_success
             # else handle debug or other results
             if (
                 ":" in line
@@ -288,12 +288,50 @@ worker_main_from_file({self.worker_id!r}, {config_file_path!r}, {results_path!r}
         runtime = time.time() - self.current_task.start_time
         if self.task_timeout != -1 and runtime > self.task_timeout:
             self._debug_print(f"Worker {self.worker_id} task {task_id} timed out after {runtime:.1f}s")
-            self._finish_task(False)
-            return False
+            final_success = self._finish_task(False)
+            return final_success
 
         return None
 
-    def _finish_task(self, success: bool) -> None:
+    def _fallback_result_check(self, task_id: str) -> bool:
+        """Fallback check for task result file when task appears to have failed."""
+        if not self.current_task:
+            return False
+            
+        result_file = os.path.join(self.current_task.task_folder, f"{task_id}_result.txt")
+        
+        # Wait 1 second to see if result file appears
+        time.sleep(1)
+        
+        if os.path.exists(result_file):
+            try:
+                with open(result_file, "r") as f:
+                    content = f.read().strip()
+                if ":" in content:
+                    _, rtype = content.split(":", 1)
+                    success = rtype == "TASK_SUCCESS_RESPONSE"
+                    if success:
+                        self._debug_print(f"Worker {self.worker_id} fallback check found success in result file for task {task_id}")
+                        os.remove(result_file)
+                        return True
+                    else:
+                        self._debug_print(f"Worker {self.worker_id} fallback check found failure in result file for task {task_id}")
+                        os.remove(result_file)
+                        return False
+            except Exception as e:
+                self._debug_print(f"Worker {self.worker_id} fallback check error reading result file: {e}")
+        
+        self._debug_print(f"Worker {self.worker_id} fallback check found no result file for task {task_id}")
+        return False
+
+    def _finish_task(self, success: bool) -> bool:
+        # If task is being marked as failed, do a fallback check first
+        if not success and self.current_task:
+            fallback_success = self._fallback_result_check(self.current_task.task_id)
+            if fallback_success:
+                success = True
+                self._debug_print(f"Worker {self.worker_id} task {self.current_task.task_id} recovered by fallback check")
+        
         self.current_task.status = "completed" if success else "failed"
         self.current_task.end_time = time.time()
         if success:
@@ -301,6 +339,7 @@ worker_main_from_file({self.worker_id!r}, {config_file_path!r}, {results_path!r}
         else:
             self.total_tasks_failed += 1
         self.status = "idle"
+        return success
 
     # ──────────────────────────  MONITORING  ────────────────────────────────
 
@@ -337,12 +376,26 @@ worker_main_from_file({self.worker_id!r}, {config_file_path!r}, {results_path!r}
     # ──────────────────────────  MISC PROPS  ───────────────────────────────
 
     def get_stats(self) -> Dict[str, Any]:
+        current_task_info = None
+        current_task_runtime = 0
+        
+        if self.current_task:
+            if self.current_task.start_time:
+                current_task_runtime = time.time() - self.current_task.start_time
+            
+            current_task_info = {
+                "task_id": self.current_task.task_id,
+                "status": self.current_task.status,
+                "runtime_seconds": current_task_runtime
+            }
+        
         return {
             "worker_id": self.worker_id,
             "pid": self.process.pid if self.process else None,
             "status": self.status,
             "gpu_ids": self.gpu_ids,
             "current_task": str(self.current_task) if self.current_task else None,
+            "current_task_info": current_task_info,
             "total_tasks_succeeded": self.total_tasks_succeeded,
             "total_tasks_failed": self.total_tasks_failed,
             "cpu_percent": {"current": self.current_cpu_percent, "max": self.max_cpu_percent},

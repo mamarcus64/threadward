@@ -129,7 +129,23 @@ class InteractiveHandler:
             
             # Format status with color/symbol
             if status == 'busy':
-                status_str = f"[BUSY] {worker_stats['current_task']}"
+                if worker_stats.get('current_task_info'):
+                    task_info = worker_stats['current_task_info']
+                    task_id = task_info['task_id']
+                    runtime = task_info['runtime_seconds']
+                    
+                    # Format runtime as MM:SS or H:MM:SS
+                    if runtime < 3600:  # Less than 1 hour
+                        minutes, seconds = divmod(int(runtime), 60)
+                        runtime_str = f"{minutes}:{seconds:02d}"
+                    else:  # 1 hour or more
+                        hours, remainder = divmod(int(runtime), 3600)
+                        minutes, seconds = divmod(remainder, 60)
+                        runtime_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+                    
+                    status_str = f"[BUSY] Task({task_id}, running for {runtime_str})"
+                else:
+                    status_str = f"[BUSY] {worker_stats['current_task']}"
             elif status == 'idle':
                 status_str = "[IDLE]"
             else:
