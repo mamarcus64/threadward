@@ -62,7 +62,6 @@ class Worker:
     def _debug_print(self, message: str):
         """Print debug message if debug mode is enabled."""
         if self.debug:
-            import time
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"[{timestamp}] {message}", flush=True)
     
@@ -265,9 +264,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                             line = self.process.stdout.readline().strip()
                             if line == "TASK_RECEIVED":
                                 ack_received = True
-                                import time
-                                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                                print(f"[{timestamp}] Worker {self.worker_id} acknowledged task {task.task_id}")
+                                print(f"Worker {self.worker_id} acknowledged task {task.task_id}")
                             elif line:
                                 # Check if it's a task result with ID
                                 if ":" in line and line.split(":", 1)[1] in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
@@ -275,7 +272,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                                     self._debug_print(f"Worker {self.worker_id} buffered task result: {line}")
                                 elif line.startswith("WORKER_DEBUG:") or line.startswith("DEBUG:"):
                                     # Handle debug messages from worker - print directly to main console
-                                    debug_msg = debug_msg.replace("WORKER_DEBUG:", '').replace("DEBUG:", '')
+                                    debug_msg = line.replace("WORKER_DEBUG:", '').replace("DEBUG:", '')
                                     self._debug_print(f"[Worker {self.worker_id}] {debug_msg}")
                                 elif "DEBUG:" not in line and line != "WORKER_READY":
                                     # Log non-debug output for debugging
@@ -337,9 +334,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                     result_task_id, result_type = result_content.split(":", 1)
                     if result_task_id == task_id and result_type in ["TASK_SUCCESS_RESPONSE", "TASK_FAILURE_RESPONSE"]:
                         success = result_type == "TASK_SUCCESS_RESPONSE"
-                        import time
-                        timestamp = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"[{timestamp}] Worker {self.worker_id} found result file for {task_id}: {result_type}")
+                        print(f"Worker {self.worker_id} found result file for {task_id}: {result_type}")
                         
                         # Remove the result file after reading
                         try:
@@ -439,9 +434,7 @@ worker_main_from_file(worker_id, config_file_path, results_path)
                         elif result_line.startswith("WORKER_DEBUG:"):
                             # Handle debug messages from worker - print directly to main console
                             debug_msg = result_line[13:]  # Remove "WORKER_DEBUG:" prefix
-                            import time
-                            timestamp = time.strftime("%H:%M:%S", time.localtime())
-                            print(f"[{timestamp}] [Worker {self.worker_id}] {debug_msg}")
+                            print(f"[Worker {self.worker_id}] {debug_msg}")
                         elif "DEBUG:" not in result_line:
                             # Non-debug output that's not a result
                             self._debug_print(f"Worker {self.worker_id} output: {result_line}")
