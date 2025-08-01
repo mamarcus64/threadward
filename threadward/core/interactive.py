@@ -84,8 +84,8 @@ class InteractiveHandler:
         """
         stats = self.threadward.get_stats()
         
-        # Get current time for display
-        current_time_str = datetime.fromtimestamp(stats['current_time']).strftime("%m/%d/%y at %I:%M %p")
+        # Get current time for display in local timezone
+        current_time_str = datetime.now().strftime("%m/%d/%y at %I:%M %p")
         
         print("\n" + "="*60)
         print(f"THREADWARD EXECUTION STATUS - {current_time_str}")
@@ -96,7 +96,7 @@ class InteractiveHandler:
         hours, remainder = divmod(int(elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
         
-        # Format start time
+        # Format start time in local timezone
         start_time_str = datetime.fromtimestamp(stats['start_time']).strftime("%m/%d/%y at %I:%M %p")
         print(f"Elapsed Time: {hours:02d}:{minutes:02d}:{seconds:02d} (Started {start_time_str})")
         
@@ -105,18 +105,18 @@ class InteractiveHandler:
             hours, remainder = divmod(int(remaining), 3600)
             minutes, seconds = divmod(remainder, 60)
             
-            # Calculate estimated completion time
-            est_completion_time = stats['current_time'] + stats['estimated_remaining_time']
+            # Calculate estimated completion time in local timezone
+            est_completion_time = time.time() + stats['estimated_remaining_time']
             est_completion_str = datetime.fromtimestamp(est_completion_time).strftime("%m/%d/%y at %I:%M %p")
             print(f"Estimated Remaining: {hours:02d}:{minutes:02d}:{seconds:02d} (Est. {est_completion_str})")
         
-        print(f"Average Time per Task: {stats['avg_time_per_task']:.2f}s")
+        print(f"Avg. Time per Task per Worker: {stats['avg_time_per_task']:.2f}s")
         
         # Task information
         print(f"\nTasks:")
         print(f"  Total:              {stats['tasks']['total']:>6}")
         print(f"  Skipped:            {stats['tasks']['skipped']:>6}")
-        print(f"  Non-Skipped Total:  {stats['tasks']['non_skipped_total']:>6}")
+        print(f"  Non-Skipped Total:  {stats['tasks']['total'] - stats['tasks']['skipped']:>6}")
         print(f"  Succeeded:          {stats['tasks']['succeeded']:>6} ({stats['tasks']['succeeded']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")
         print(f"  Failed:             {stats['tasks']['failed']:>6} ({stats['tasks']['failed']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")
         print(f"  Remaining:          {stats['tasks']['remaining']:>6} ({stats['tasks']['remaining']/max(stats['tasks']['non_skipped_total'], 1)*100:.1f}%)")

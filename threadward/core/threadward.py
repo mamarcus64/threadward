@@ -595,8 +595,13 @@ class Threadward:
         remaining_count = self.task_queue.qsize()
         non_skipped_total = succeeded_count + failed_count + remaining_count
         
-        avg_time_per_task = elapsed_time / max(succeeded_count + failed_count, 1)
-        estimated_remaining_time = avg_time_per_task * remaining_count if remaining_count > 0 else 0
+        # Calculate average time per task per worker
+        total_completed = succeeded_count + failed_count
+        num_workers = len(self.workers)
+        avg_time_per_task = (elapsed_time * num_workers) / max(total_completed, 1)
+        
+        # Estimated remaining time is based on total remaining tasks divided by number of workers
+        estimated_remaining_time = (avg_time_per_task * remaining_count) / num_workers if remaining_count > 0 else 0
         
         return {
             "elapsed_time": elapsed_time,
