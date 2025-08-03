@@ -20,7 +20,7 @@ except ImportError:
 class Threadward:
     """Main coordinator class for threadward execution."""
     
-    def __init__(self, project_path: str, config_module, debug: bool = False, results_folder: str = "threadward_results"):
+    def __init__(self, project_path: str, config_module, debug: bool = False, results_folder: str = "threadward_results", timezone: str = "US/Pacific"):
         """Initialize Threadward coordinator.
         
         Args:
@@ -28,12 +28,14 @@ class Threadward:
             config_module: The loaded configuration module
             debug: Enable debug output (default: False)
             results_folder: Name of the results folder (default: "threadward_results")
+            timezone: Timezone for display timestamps (default: "US/Pacific")
         """
         self.project_path = os.path.abspath(project_path)
         self.config_module = config_module
         self.config_file_path = getattr(config_module, '__file__', None)
         self.debug = debug
         self.results_folder = results_folder
+        self.timezone = timezone
         
         # Create results directory structure
         self.results_path = os.path.join(project_path, results_folder)
@@ -427,7 +429,7 @@ class Threadward:
         self.start_time = time.time()
         
         # Start interactive handler
-        self.interactive_handler = InteractiveHandler(self)
+        self.interactive_handler = InteractiveHandler(self, timezone=self.timezone)
         self.interactive_handler.start()
         
         try:

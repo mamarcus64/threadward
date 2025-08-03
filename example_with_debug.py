@@ -19,6 +19,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run threadward experiments')
     parser.add_argument('--debug', action='store_true', 
                        help='Enable debug output for troubleshooting')
+    parser.add_argument('--timezone', default='US/Pacific',
+                       help='Timezone for display timestamps (default: US/Pacific). Examples: US/Eastern, US/Central, Europe/London, UTC')
     return parser.parse_args()
 
 def main():
@@ -31,11 +33,12 @@ def main():
     # Import your config module
     # import your_config_module
     
-    # Create threadward instance with debug flag
-    # threadward = Threadward(".", your_config_module, debug=args.debug)
+    # Create threadward instance with debug flag and timezone
+    # threadward = Threadward(".", your_config_module, debug=args.debug, timezone=args.timezone)
     # threadward.run()
     
     print(f"Debug mode: {'enabled' if args.debug else 'disabled'}")
+    print(f"Timezone: {args.timezone}")
     print("Replace this main() function with your actual threadward setup")
 
 if __name__ == "__main__":

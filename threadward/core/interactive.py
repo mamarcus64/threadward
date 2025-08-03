@@ -6,20 +6,77 @@ import time
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    # Fallback for Python < 3.9
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        # If no timezone support available, use a simple fallback
+        class ZoneInfo:
+            def __init__(self, timezone_name):
+                self.name = timezone_name
+            
+            def __str__(self):
+                return self.name
+
 if TYPE_CHECKING:
     from .threadward import Threadward
+
+
+def format_duration(seconds: float) -> str:
+    """Convert seconds to a human-readable duration format.
+    
+    Args:
+        seconds: Duration in seconds
+        
+    Returns:
+        Formatted string like "2m 30s", "1h 5m", "2d 3h", etc.
+    """
+    if seconds < 61:
+        return f"{seconds:.1f}s"
+    
+    # Convert to integer seconds for breakdown
+    total_seconds = int(seconds)
+    
+    # Calculate days, hours, minutes, seconds
+    days, remainder = divmod(total_seconds, 86400)  # 86400 seconds in a day
+    hours, remainder = divmod(remainder, 3600)      # 3600 seconds in an hour
+    minutes, secs = divmod(remainder, 60)           # 60 seconds in a minute
+    
+    # Build the formatted string
+    parts = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:  # Include seconds if no other parts or if there are remaining seconds
+        parts.append(f"{secs}s")
+    
+    return " ".join(parts)
 
 
 class InteractiveHandler:
     """Handles interactive commands during threadward execution."""
     
-    def __init__(self, threadward_instance: 'Threadward'):
+    def __init__(self, threadward_instance: 'Threadward', timezone: str = 'US/Pacific'):
         """Initialize the interactive handler.
         
         Args:
             threadward_instance: The main Threadward instance to interact with
+            timezone: Timezone string for display (default: 'US/Pacific')
         """
         self.threadward = threadward_instance
+        self.timezone_name = timezone
+        try:
+            self.timezone = ZoneInfo(timezone)
+        except (ValueError, ImportError, Exception):
+            # Fallback to local timezone on any error
+            print(f"Warning: Invalid timezone '{timezone}', falling back to local timezone")
+            self.timezone = None
         self.commands = {
             'show': self.show_stats,
             's': self.show_stats,
@@ -84,8 +141,11 @@ class InteractiveHandler:
         """
         stats = self.threadward.get_stats()
         
-        # Get current time for display in local timezone
-        current_time_str = datetime.now().strftime("%m/%d/%y at %I:%M %p")
+        # Get current time for display in specified timezone
+        if self.timezone:
+            current_time_str = datetime.now(self.timezone).strftime("%m/%d/%y at %I:%M %p")
+        else:
+            current_time_str = datetime.now().strftime("%m/%d/%y at %I:%M %p")
         
         print("\n" + "="*60)
         print(f"THREADWARD EXECUTION STATUS - {current_time_str}")
@@ -96,8 +156,11 @@ class InteractiveHandler:
         hours, remainder = divmod(int(elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
         
-        # Format start time in local timezone
-        start_time_str = datetime.fromtimestamp(stats['start_time']).strftime("%m/%d/%y at %I:%M %p")
+        # Format start time in specified timezone
+        if self.timezone:
+            start_time_str = datetime.fromtimestamp(stats['start_time'], tz=self.timezone).strftime("%m/%d/%y at %I:%M %p")
+        else:
+            start_time_str = datetime.fromtimestamp(stats['start_time']).strftime("%m/%d/%y at %I:%M %p")
         print(f"Elapsed Time: {hours:02d}:{minutes:02d}:{seconds:02d} (Started {start_time_str})")
         
         if stats['estimated_remaining_time'] > 0:
@@ -105,12 +168,15 @@ class InteractiveHandler:
             hours, remainder = divmod(int(remaining), 3600)
             minutes, seconds = divmod(remainder, 60)
             
-            # Calculate estimated completion time in local timezone
+            # Calculate estimated completion time in specified timezone
             est_completion_time = time.time() + stats['estimated_remaining_time']
-            est_completion_str = datetime.fromtimestamp(est_completion_time).strftime("%m/%d/%y at %I:%M %p")
+            if self.timezone:
+                est_completion_str = datetime.fromtimestamp(est_completion_time, tz=self.timezone).strftime("%m/%d/%y at %I:%M %p")
+            else:
+                est_completion_str = datetime.fromtimestamp(est_completion_time).strftime("%m/%d/%y at %I:%M %p")
             print(f"Estimated Remaining: {hours:02d}:{minutes:02d}:{seconds:02d} (Est. {est_completion_str})")
         
-        print(f"Avg. Time per Task per Worker: {stats['avg_time_per_task']:.2f}s")
+        print(f"Avg. Time per Task per Worker: {format_duration(stats['avg_time_per_task'])}")
         
         # Task information
         print(f"\nTasks:")
